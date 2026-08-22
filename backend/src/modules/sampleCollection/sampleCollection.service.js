@@ -2,7 +2,7 @@ const prisma = require('../../config/db');
 const { ApiError } = require('../../middleware/errorHandler');
 
 const collectionInclude = {
-  patient: { select: { id: true, name: true, email: true, phone: true } },
+  patient: { select: { id: true, name: true, email: true, phone: true, avatarUrl: true } },
   labAssistant: true,
 };
 

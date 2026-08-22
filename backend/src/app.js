@@ -7,8 +7,10 @@ const env = require('./config/env');
 const { notFoundHandler, errorHandler } = require('./middleware/errorHandler');
 
 const authRoutes = require('./modules/auth/auth.routes');
+const userRoutes = require('./modules/users/users.routes');
 const doctorRoutes = require('./modules/doctors/doctors.routes');
 const appointmentRoutes = require('./modules/appointments/appointments.routes');
+const dailyCapacityRoutes = require('./modules/dailyCapacity/dailyCapacity.routes');
 const healthRecordRoutes = require('./modules/healthRecords/healthRecords.routes');
 const reviewRoutes = require('./modules/reviews/reviews.routes');
 const sampleCollectionRoutes = require('./modules/sampleCollection/sampleCollection.routes');
@@ -34,8 +36,10 @@ app.get('/api/health', (req, res) => {
 });
 
 app.use('/api/auth', authRoutes);
+app.use('/api/users', userRoutes);
 app.use('/api/doctors', doctorRoutes);
 app.use('/api/appointments', appointmentRoutes);
+app.use('/api/daily-capacity', dailyCapacityRoutes);
 app.use('/api/health-records', healthRecordRoutes);
 app.use('/api/reviews', reviewRoutes);
 app.use('/api/sample-collections', sampleCollectionRoutes);

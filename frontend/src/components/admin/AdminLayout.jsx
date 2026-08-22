@@ -7,6 +7,7 @@ import {
   Ambulance,
   Receipt,
   BarChart3,
+  CalendarClock,
 } from "lucide-react";
 import Sidebar from "../shared/Sidebar";
 
@@ -17,6 +18,7 @@ const adminNavItems = [
   { label: "Manage Patients", to: "/admin/patients", icon: Users },
   { label: "Lab Assistants", to: "/admin/lab-assistants", icon: FlaskConical },
   { label: "Ambulance Fleet", to: "/admin/ambulances", icon: Ambulance },
+  { label: "Daily Capacity", to: "/admin/daily-capacity", icon: CalendarClock },
   { label: "Transactions", to: "/admin/transactions", icon: Receipt },
   { label: "Reports", to: "/admin/reports", icon: BarChart3 },
 ];

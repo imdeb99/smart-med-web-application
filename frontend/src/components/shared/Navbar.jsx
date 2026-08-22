@@ -5,17 +5,18 @@ import {
   Menu,
   X,
   LogOut,
-  UserCircle,
   ChevronDown,
   FlaskConical,
   Ambulance,
   Calculator,
+  HeartPulse,
   UserRound,
   Share2,
 } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
 import { useToast } from "../../context/ToastContext";
 import ShareMenu from "./ShareMenu";
+import Avatar from "./Avatar";
 
 const navLinksByRole = {
   guest: [
@@ -52,6 +53,7 @@ const serviceLinks = [
   { label: "Home Sample Collection", to: "/patient/sample-collection", icon: FlaskConical },
   { label: "Ambulance Booking", to: "/patient/ambulance", icon: Ambulance },
   { label: "BMI Calculator", to: "/patient/bmi-calculator", icon: Calculator },
+  { label: "ECG Signal Lab", to: "/ecg-demo", icon: HeartPulse },
 ];
 
 export default function Navbar() {
@@ -113,6 +115,11 @@ export default function Navbar() {
                 {link.label}
               </NavLink>
             ))}
+          {(role === "doctor" || role === "admin") && (
+            <NavLink to={`/${role}/dashboard`} className={linkClasses}>
+              Dashboard
+            </NavLink>
+          )}
           <div
             className="relative"
             onMouseEnter={() => setServicesOpen(true)}
@@ -158,7 +165,7 @@ export default function Navbar() {
                 aria-label="Account menu"
                 className="flex items-center gap-1.5 text-sm text-gray-600 hover:text-gray-900 px-2 py-2 rounded-lg hover:bg-gray-100 transition-colors"
               >
-                <UserCircle size={18} className="text-teal-600" />
+                <Avatar name={user.name} src={user.avatar} className="w-7 h-7 text-xs" />
                 {user.name}
                 <span className="capitalize text-xs bg-teal-50 text-teal-700 px-2 py-0.5 rounded-full ml-1">
                   {user.role}

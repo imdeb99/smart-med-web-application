@@ -1,19 +1,90 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, Video, MapPin, BadgeCheck } from "lucide-react";
+import { ArrowLeft, Video, MapPin, BadgeCheck, Loader2, Users } from "lucide-react";
 import { useDoctors } from "../../context/DoctorsContext";
 import { getNextDays } from "../../utils/helpers";
+import { getDoctorDailyCapacity } from "../../api/capacity";
+import { socket, joinCapacityRoom, leaveCapacityRoom } from "../../lib/socket";
+
+// Standard fallback slots shown while the doctor has no availability
+// configured (the availability model doesn't exist on the backend yet).
+const FALLBACK_SLOTS = ["09:00 AM", "10:30 AM", "12:00 PM", "02:00 PM", "04:30 PM"];
 
 export default function AppointmentBooking() {
   const { doctorId } = useParams();
   const navigate = useNavigate();
   const { getDoctorById } = useDoctors();
-  const doctor = getDoctorById(doctorId);
+  const [doctor, setDoctor] = useState(null);
+  const [loading, setLoading] = useState(true);
 
   const days = useMemo(() => getNextDays(7), []);
   const [type, setType] = useState("video");
   const [selectedDate, setSelectedDate] = useState(null);
   const [selectedSlot, setSelectedSlot] = useState(null);
+
+  // Real-time daily capacity for the selected doctor+date.
+  const [capacity, setCapacity] = useState(null);
+  const [capacityLoading, setCapacityLoading] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      setLoading(true);
+      const result = await getDoctorById(doctorId);
+      if (!cancelled) {
+        setDoctor(result);
+        setLoading(false);
+      }
+    };
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, [doctorId, getDoctorById]);
+
+  // Fetch initial capacity + subscribe to live updates when a date is picked.
+  useEffect(() => {
+    if (!doctorId || !selectedDate) return undefined;
+
+    let cancelled = false;
+    setCapacityLoading(true);
+
+    const fetchInitial = async () => {
+      try {
+        const data = await getDoctorDailyCapacity(doctorId, selectedDate);
+        if (!cancelled) {
+          setCapacity(data.capacity);
+        }
+      } catch {
+        if (!cancelled) setCapacity(null);
+      } finally {
+        if (!cancelled) setCapacityLoading(false);
+      }
+    };
+    fetchInitial();
+
+    joinCapacityRoom(doctorId, selectedDate);
+    const onUpdate = (payload) => {
+      if (payload?.doctorId === doctorId && payload?.date === selectedDate) {
+        setCapacity(payload.capacity);
+      }
+    };
+    socket.on("capacity-update", onUpdate);
+
+    return () => {
+      cancelled = true;
+      socket.off("capacity-update", onUpdate);
+      leaveCapacityRoom(doctorId, selectedDate);
+    };
+  }, [doctorId, selectedDate]);
+
+  if (loading) {
+    return (
+      <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-24 flex items-center justify-center">
+        <Loader2 size={28} className="animate-spin text-teal-600" aria-hidden="true" />
+      </div>
+    );
+  }
 
   if (!doctor) {
     return (
@@ -27,12 +98,16 @@ export default function AppointmentBooking() {
   }
 
   const canProceed = selectedDate && selectedSlot;
+  const availableSlots = doctor.availableSlots.length > 0 ? doctor.availableSlots : FALLBACK_SLOTS;
 
   const handleProceed = () => {
     if (!canProceed) return;
     navigate("/patient/checkout", {
       state: {
         doctorId: doctor.id,
+        doctorName: doctor.name,
+        doctorSpecialty: doctor.specialty,
+        doctorAvatar: doctor.avatar,
         date: selectedDate,
         time: selectedSlot,
         type,
@@ -122,29 +197,59 @@ export default function AppointmentBooking() {
           </div>
         </fieldset>
 
+        {/* Real-time capacity */}
+        {selectedDate && (
+          <div className="mt-6">
+            <div className="bg-white rounded-xl border border-gray-100 p-4 flex items-center gap-4">
+              <div className="bg-teal-50 text-teal-600 rounded-full p-2.5 shrink-0">
+                <Users size={18} aria-hidden="true" />
+              </div>
+              <div className="flex-1">
+                <p className="text-xs text-gray-500">Daily capacity for {selectedDate}</p>
+                {capacityLoading && capacity === null ? (
+                  <p className="text-sm font-medium text-gray-400">Loading availability...</p>
+                ) : capacity ? (
+                  <p className="text-sm font-medium text-gray-800">
+                    <span className="text-teal-700 font-bold">{capacity.available}</span> of{" "}
+                    {capacity.totalCapacity} slots available
+                    {capacity.booked > 0 && (
+                      <span className="text-gray-400 font-normal"> · {capacity.booked} booked</span>
+                    )}
+                  </p>
+                ) : (
+                  <p className="text-sm font-medium text-gray-400">
+                    No daily capacity configured for this date.
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Slot picker */}
         <fieldset className="mt-6">
           <legend className="text-sm font-semibold text-gray-700 mb-3">Select Time Slot</legend>
-          {doctor.availableSlots.length === 0 ? (
-            <p className="text-sm text-gray-400">No time slots available for this doctor.</p>
-          ) : (
-            <div className="flex flex-wrap gap-2">
-              {doctor.availableSlots.map((slot) => (
-                <button
-                  type="button"
-                  key={slot}
-                  onClick={() => setSelectedSlot(slot)}
-                  aria-pressed={selectedSlot === slot}
-                  className={`rounded-xl border px-4 py-2 text-sm font-medium transition-colors ${
-                    selectedSlot === slot
-                      ? "border-teal-600 bg-teal-50 text-teal-700"
-                      : "border-gray-200 text-gray-500 hover:border-teal-300"
-                  }`}
-                >
-                  {slot}
-                </button>
-              ))}
-            </div>
+          <div className="flex flex-wrap gap-2">
+            {availableSlots.map((slot) => (
+              <button
+                type="button"
+                key={slot}
+                onClick={() => setSelectedSlot(slot)}
+                aria-pressed={selectedSlot === slot}
+                className={`rounded-xl border px-4 py-2 text-sm font-medium transition-colors ${
+                  selectedSlot === slot
+                    ? "border-teal-600 bg-teal-50 text-teal-700"
+                    : "border-gray-200 text-gray-500 hover:border-teal-300"
+                }`}
+              >
+                {slot}
+              </button>
+            ))}
+          </div>
+          {doctor.availableSlots.length === 0 && (
+            <p className="text-xs text-gray-400 mt-2">
+              The doctor hasn't set availability yet — showing standard time slots.
+            </p>
           )}
         </fieldset>
 

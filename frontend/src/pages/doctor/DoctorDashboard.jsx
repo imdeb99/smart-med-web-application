@@ -9,27 +9,29 @@ import {
   CalendarClock,
   FileText,
   CalendarX2,
+  Loader2,
 } from "lucide-react";
 import DoctorLayout from "../../components/doctor/DoctorLayout";
 import AppointmentRow from "../../components/doctor/AppointmentRow";
 import EmptyState from "../../components/shared/EmptyState";
-import PageSkeleton from "../../components/shared/PageSkeleton";
 import { useAppointments } from "../../context/AppointmentsContext";
 import { useDoctors } from "../../context/DoctorsContext";
-import { DEMO_DOCTOR_ID } from "../../utils/constants";
+import { useToast } from "../../context/ToastContext";
 
-const TODAY_ISO = new Date().toISOString().split("T")[0];
+// Local YYYY-MM-DD (matches the adapter's toISODate, which uses local time).
+const now = new Date();
+const TODAY_ISO = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
 const CURRENT_MONTH = TODAY_ISO.slice(0, 7);
 
 export default function DoctorDashboard() {
-  const { appointments, completeAppointment } = useAppointments();
-  const { getDoctorById } = useDoctors();
-  const doctor = getDoctorById(DEMO_DOCTOR_ID);
+  const { appointments, isLoading, error, completeAppointment, refresh } = useAppointments();
+  const { currentDoctor } = useDoctors();
+  const { addToast } = useToast();
   const navigate = useNavigate();
 
   const myAppointments = useMemo(
-    () => appointments.filter((a) => a.doctorId === DEMO_DOCTOR_ID),
-    [appointments]
+    () => appointments.filter((a) => a.doctorId === currentDoctor?.id),
+    [appointments, currentDoctor?.id],
   );
 
   const todaysAppointments = myAppointments
@@ -46,30 +48,28 @@ export default function DoctorDashboard() {
     .filter((a) => a.status === "completed")
     .reduce((sum, a) => sum + a.fee, 0);
 
-  if (!doctor) return <PageSkeleton />;
-
   const stats = [
     {
       label: "Today's Appointments",
-      value: todaysAppointments.length,
+      value: isLoading ? "…" : todaysAppointments.length,
       icon: CalendarCheck,
       color: "bg-teal-50 text-teal-600",
     },
     {
       label: "Total Patients",
-      value: uniquePatients.size,
+      value: isLoading ? "…" : uniquePatients.size,
       icon: Users,
       color: "bg-emerald-50 text-emerald-600",
     },
     {
       label: "This Month's Earnings",
-      value: `৳${monthlyEarnings}`,
+      value: isLoading ? "…" : `৳${monthlyEarnings}`,
       icon: Wallet,
       color: "bg-amber-50 text-amber-600",
     },
     {
       label: "Average Rating",
-      value: doctor.rating,
+      value: currentDoctor ? currentDoctor.rating : "—",
       icon: Star,
       color: "bg-purple-50 text-purple-600",
     },
@@ -79,20 +79,29 @@ export default function DoctorDashboard() {
     navigate(`/doctor/prescriptions/${appointment.id}`);
   };
 
-  const handleComplete = (appointment) => {
-    completeAppointment(appointment.id);
+  const handleComplete = async (appointment) => {
+    try {
+      await completeAppointment(appointment.id);
+      addToast("Appointment marked as completed.", "success");
+    } catch (err) {
+      addToast(err.message || "Could not complete the appointment.", "error");
+    }
   };
 
   return (
     <DoctorLayout>
       <div className="flex items-center gap-3 mb-1">
-        <h1 className="text-3xl font-bold text-gray-800">Welcome, {doctor.name}</h1>
-        {doctor.verified && (
+        <h1 className="text-3xl font-bold text-gray-800">
+          {currentDoctor ? `Welcome, ${currentDoctor.name}` : "Doctor Dashboard"}
+        </h1>
+        {currentDoctor?.verified && (
           <BadgeCheck size={22} className="text-emerald-500" aria-label="Verified doctor" />
         )}
       </div>
       <p className="text-gray-500 mb-8">
-        {doctor.specialty} · Total lifetime earnings: ৳{totalEarnings}
+        {currentDoctor
+          ? `${currentDoctor.specialty} · Total lifetime earnings: ৳${totalEarnings}`
+          : "Loading your profile..."}
       </p>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -144,7 +153,28 @@ export default function DoctorDashboard() {
       </div>
 
       <h2 className="text-lg font-semibold text-gray-800 mt-10 mb-4">Today's Appointments</h2>
-      {todaysAppointments.length === 0 ? (
+      {isLoading ? (
+        <div className="flex items-center justify-center gap-2 py-16 text-gray-400">
+          <Loader2 size={20} className="animate-spin text-teal-600" aria-hidden="true" />
+          <span className="text-sm">Loading appointments...</span>
+        </div>
+      ) : error ? (
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm">
+          <EmptyState
+            icon={CalendarX2}
+            title="Could not load appointments"
+            message={error}
+            action={
+              <button
+                onClick={refresh}
+                className="inline-flex items-center gap-2 bg-teal-600 hover:bg-teal-700 text-white font-medium px-5 py-2.5 rounded-xl transition-colors"
+              >
+                Try Again
+              </button>
+            }
+          />
+        </div>
+      ) : todaysAppointments.length === 0 ? (
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm">
           <EmptyState
             icon={CalendarX2}
@@ -181,4 +211,5 @@ export default function DoctorDashboard() {
       )}
     </DoctorLayout>
   );
+
 }

@@ -48,8 +48,14 @@ const loginSchema = z.object({
   password: z.string().min(1, 'Password is required'),
 });
 
+const updateProfileSchema = z.object({
+  name: z.string().min(2, 'Name must be at least 2 characters').optional(),
+  phone: z.string().optional().nullable(),
+});
+
 router.post('/register', validate(registerSchema), controller.register);
 router.post('/login', loginLimiter, validate(loginSchema), controller.login);
 router.get('/me', authenticate, controller.me);
+router.patch('/me', authenticate, validate(updateProfileSchema), controller.updateProfile);
 
 module.exports = router;

@@ -1,47 +1,79 @@
-import { createContext, useContext, useState } from "react";
-import mockPatients from "../data/mockPatients";
+import { createContext, useCallback, useContext, useEffect, useState } from "react";
+import adminApi from "../api/admin";
+import { mapPatientsListFromApi, mapPatientDetailFromApi } from "../api/adapters";
+import { useAuth } from "./AuthContext";
 
 const PatientsContext = createContext(null);
-const STORAGE_KEY = "smartmed_patients";
 
 export function PatientsProvider({ children }) {
-  const [patients, setPatients] = useState(() => {
-    try {
-      const stored = localStorage.getItem(STORAGE_KEY);
-      return stored ? JSON.parse(stored) : mockPatients;
-    } catch {
-      return mockPatients;
+  const { user } = useAuth();
+  const [patients, setPatients] = useState([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  // Load the patient list from the admin API when an admin is logged in.
+  // Non-admin callers get an empty list (no consumer needs the full patient
+  // list outside the admin pages).
+  const refresh = useCallback(async () => {
+    if (!user || user.role !== "admin") {
+      setPatients([]);
+      setIsLoading(false);
+      return;
     }
-  });
+    setIsLoading(true);
+    setError("");
+    try {
+      const data = await adminApi.getAdminPatients({ limit: 100 });
+      setPatients(mapPatientsListFromApi(data).patients);
+    } catch (err) {
+      setPatients([]);
+      setError(err instanceof Error ? err.message : "Failed to load patients.");
+    } finally {
+      setIsLoading(false);
+    }
+  }, [user]);
 
-  const persist = (next) => {
-    setPatients(next);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
-  };
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
 
-  const getPatientById = (id) => patients.find((p) => p.id === id);
+  /** Admin-only: fetch a single patient (used for detail views). */
+  const getPatientById = useCallback(
+    async (id) => {
+      const cached = patients.find((p) => p.id === id);
+      if (cached) return cached;
+      try {
+        const data = await adminApi.getAdminPatientById(id);
+        return mapPatientDetailFromApi(data);
+      } catch {
+        return null;
+      }
+    },
+    [patients],
+  );
 
-  const addPatient = (patient) => {
-    const newPatient = {
-      id: `pat-${Date.now()}`,
-      avatar: `https://i.pravatar.cc/150?img=${Math.floor(Math.random() * 70) + 1}`,
-      ...patient,
-    };
-    persist([newPatient, ...patients]);
-    return newPatient;
-  };
+  /** Admin-only: update a patient's account + profile fields. */
+  const updatePatient = useCallback(async (id, payload) => {
+    const data = await adminApi.updateAdminPatient(id, payload);
+    const updated = mapPatientDetailFromApi(data);
+    setPatients((prev) => prev.map((p) => (p.id === id ? updated : p)));
+    return updated;
+  }, []);
 
-  const updatePatient = (id, updates) => {
-    persist(patients.map((p) => (p.id === id ? { ...p, ...updates } : p)));
-  };
+  /** Admin-only: delete a patient account (cascades related records). */
+  const deletePatient = useCallback(async (id) => {
+    await adminApi.deleteAdminPatient(id);
+    setPatients((prev) => prev.filter((p) => p.id !== id));
+  }, []);
 
-  const deletePatient = (id) => {
-    persist(patients.filter((p) => p.id !== id));
-  };
+  /** Admin-only: update a patient's avatar URL in the local list after an upload. */
+  const updatePatientAvatar = useCallback((id, avatarUrl) => {
+    setPatients((prev) => prev.map((p) => (p.id === id ? { ...p, avatar: avatarUrl } : p)));
+  }, []);
 
   return (
     <PatientsContext.Provider
-      value={{ patients, getPatientById, addPatient, updatePatient, deletePatient }}
+      value={{ patients, isLoading, error, refresh, getPatientById, updatePatient, deletePatient, updatePatientAvatar }}
     >
       {children}
     </PatientsContext.Provider>

@@ -1,21 +1,59 @@
-import { useMemo } from "react";
-import { Star, MessagesSquare } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { Star, MessagesSquare, Loader2 } from "lucide-react";
 import DoctorLayout from "../../components/doctor/DoctorLayout";
 import EmptyState from "../../components/shared/EmptyState";
-import mockReviews from "../../data/mockReviews";
+import reviewsApi from "../../api/reviews";
+import { mapReviewsListFromApi } from "../../api/adapters";
 import { useDoctors } from "../../context/DoctorsContext";
-import { DEMO_DOCTOR_ID } from "../../utils/constants";
 
 export default function DoctorReviews() {
-  const { getDoctorById } = useDoctors();
-  const doctor = getDoctorById(DEMO_DOCTOR_ID);
-  const reviews = useMemo(
-    () =>
-      mockReviews
-        .filter((r) => r.doctorId === DEMO_DOCTOR_ID)
-        .sort((a, b) => new Date(b.date) - new Date(a.date)),
-    []
-  );
+  const { currentDoctor } = useDoctors();
+  const doctor = currentDoctor || { rating: 0, reviewsCount: 0 };
+  const [reviews, setReviews] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState("");
+  // The reviews endpoint returns an aggregate summary — use it for the rating
+  // display (doctor records have no rating fields).
+  const [summary, setSummary] = useState(null);
+  const displayRating = Number(summary?.averageRating || doctor.rating);
+  const displayCount = summary?.totalReviews ?? doctor.reviewsCount;
+
+  // Load the logged-in doctor's reviews from the real API. The backend scopes
+  // nothing here (public endpoint), so filter by the current doctor's id.
+  useEffect(() => {
+    let cancelled = false;
+
+    const load = async () => {
+      setIsLoading(true);
+      setError("");
+      try {
+        const data = await reviewsApi.getReviewsByDoctor(currentDoctor.id, { limit: 100 });
+        if (!cancelled) {
+          const mapped = mapReviewsListFromApi(data);
+          setReviews(
+            mapped.reviews.filter((r) => r.doctorId === currentDoctor.id),
+          );
+          setSummary(mapped.summary);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setReviews([]);
+          setSummary(null);
+          setError(err instanceof Error ? err.message : "Failed to load reviews.");
+        }
+      } finally {
+        if (!cancelled) setIsLoading(false);
+      }
+    };
+
+    if (currentDoctor?.id) load();
+    else {
+      setIsLoading(false);
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [currentDoctor?.id]);
 
   const distribution = useMemo(() => {
     const counts = { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 };
@@ -34,22 +72,22 @@ export default function DoctorReviews() {
 
       <div className="grid md:grid-cols-3 gap-6 mb-8">
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 flex flex-col items-center justify-center text-center">
-          <p className="text-4xl font-bold text-gray-800">{doctor.rating}</p>
-          <div className="flex items-center gap-1 mt-1" aria-label={`Rated ${doctor.rating} out of 5`}>
+          <p className="text-4xl font-bold text-gray-800">{displayRating}</p>
+          <div className="flex items-center gap-1 mt-1" aria-label={`Rated ${displayRating} out of 5`}>
             {[1, 2, 3, 4, 5].map((i) => (
               <Star
                 key={i}
                 size={16}
                 aria-hidden="true"
                 className={
-                  i <= Math.round(doctor.rating)
+                  i <= Math.round(displayRating)
                     ? "text-amber-400 fill-amber-400"
                     : "text-gray-200"
                 }
               />
             ))}
           </div>
-          <p className="text-xs text-gray-500 mt-2">Based on {doctor.reviewsCount} total reviews</p>
+          <p className="text-xs text-gray-500 mt-2">Based on {displayCount} total reviews</p>
         </div>
 
         <div className="md:col-span-2 bg-white rounded-2xl border border-gray-100 shadow-sm p-6">
@@ -75,7 +113,20 @@ export default function DoctorReviews() {
         </div>
       </div>
 
-      {reviews.length === 0 ? (
+      {isLoading ? (
+        <div className="flex items-center justify-center gap-2 py-16 text-gray-400">
+          <Loader2 size={20} className="animate-spin text-teal-600" aria-hidden="true" />
+          <span className="text-sm">Loading reviews...</span>
+        </div>
+      ) : error ? (
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm">
+          <EmptyState
+            icon={MessagesSquare}
+            title="Could not load reviews"
+            message={error}
+          />
+        </div>
+      ) : reviews.length === 0 ? (
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm">
           <EmptyState
             icon={MessagesSquare}

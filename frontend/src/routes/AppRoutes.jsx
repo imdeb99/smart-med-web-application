@@ -5,6 +5,7 @@ import PublicOnlyRoute from "./PublicOnlyRoute";
 import RouteFallback from "../components/shared/RouteFallback";
 
 const Home = lazy(() => import("../pages/Home"));
+const EcgDemo = lazy(() => import("../pages/EcgDemo"));
 const About = lazy(() => import("../pages/About"));
 const Contact = lazy(() => import("../pages/Contact"));
 const Terms = lazy(() => import("../pages/Terms"));
@@ -39,6 +40,7 @@ const ManageDoctors = lazy(() => import("../pages/admin/ManageDoctors"));
 const ManagePatients = lazy(() => import("../pages/admin/ManagePatients"));
 const ManageLabAssistants = lazy(() => import("../pages/admin/ManageLabAssistants"));
 const ManageAmbulances = lazy(() => import("../pages/admin/ManageAmbulances"));
+const ManageDailyCapacity = lazy(() => import("../pages/admin/ManageDailyCapacity"));
 const Transactions = lazy(() => import("../pages/admin/Transactions"));
 const Reports = lazy(() => import("../pages/admin/Reports"));
 
@@ -64,6 +66,7 @@ const protectedRoutes = [
   { path: "/admin/patients", role: "admin", Page: ManagePatients },
   { path: "/admin/lab-assistants", role: "admin", Page: ManageLabAssistants },
   { path: "/admin/ambulances", role: "admin", Page: ManageAmbulances },
+  { path: "/admin/daily-capacity", role: "admin", Page: ManageDailyCapacity },
   { path: "/admin/transactions", role: "admin", Page: Transactions },
   { path: "/admin/reports", role: "admin", Page: Reports },
 ];
@@ -74,6 +77,7 @@ export default function AppRoutes() {
       <Routes>
         {/* Public */}
         <Route path="/" element={<Home />} />
+        <Route path="/ecg-demo" element={<EcgDemo />} />
         <Route path="/about" element={<About />} />
         <Route path="/contact" element={<Contact />} />
         <Route path="/terms" element={<Terms />} />

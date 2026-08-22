@@ -1,11 +1,89 @@
 const prisma = require('../../config/db');
 const { ApiError } = require('../../middleware/errorHandler');
+const { emitCapacityUpdate } = require('../../config/socket');
+
+/** Parse "HH:MM" (24h) into minutes since midnight. */
+const timeToMinutes = (time) => {
+  const [h, m] = time.split(':').map(Number);
+  return h * 60 + m;
+};
+
+/**
+ * Patient-only: book against a doctor's daily capacity for a given date.
+ * Runs in a transaction so concurrent bookings can't oversell the capacity.
+ */
+const createDailyCapacityBooking = async ({ patientId, doctorId, date }) => {
+  const targetDate = new Date(`${date}T00:00:00.000Z`);
+
+  return prisma.$transaction(async (tx) => {
+    const capacity = await tx.dailyCapacity.findUnique({
+      where: { doctorId_date: { doctorId, date: targetDate } },
+    });
+    if (!capacity) {
+      throw new ApiError(404, 'No capacity configured for this doctor on the selected date.');
+    }
+
+    // Count only non-cancelled bookings so a cancellation frees a token.
+    const bookedCount = await tx.appointment.count({
+      where: { dailyCapacityId: capacity.id, status: { not: 'CANCELLED' } },
+    });
+    if (bookedCount >= capacity.totalCapacity) {
+      throw new ApiError(409, 'Fully booked. No capacity left for this date.');
+    }
+
+    // One active (non-cancelled) booking per patient per doctor per date.
+    const existing = await tx.appointment.findFirst({
+      where: {
+        patientId,
+        doctorId,
+        dailyCapacityId: capacity.id,
+        status: { not: 'CANCELLED' },
+      },
+    });
+    if (existing) {
+      throw new ApiError(409, 'You already have a booking with this doctor on this date.');
+    }
+
+    const tokenNumber = bookedCount + 1;
+    const estimatedTime = new Date(
+      targetDate.getTime() + (timeToMinutes(capacity.startTime) + (tokenNumber - 1) * capacity.avgDurationMin) * 60000,
+    );
+
+    const appointment = await tx.appointment.create({
+      data: {
+        patientId,
+        doctorId,
+        scheduledAt: targetDate,
+        type: 'VIDEO',
+        tokenNumber,
+        estimatedTime,
+        dailyCapacityId: capacity.id,
+      },
+      include: appointmentInclude,
+    });
+
+    return { appointment, bookedCount: bookedCount + 1, totalCapacity: capacity.totalCapacity };
+  }).then(({ appointment, bookedCount, totalCapacity }) => {
+    // Broadcast AFTER the transaction commits so listeners never see a
+    // half-applied state.
+    emitCapacityUpdate({
+      doctorId,
+      date,
+      capacity: {
+        booked: bookedCount,
+        totalCapacity,
+        available: Math.max(0, totalCapacity - bookedCount),
+      },
+    });
+    return appointment;
+  });
+};
 
 const appointmentInclude = {
-  patient: { select: { id: true, name: true, email: true, phone: true } },
+  patient: { select: { id: true, name: true, email: true, phone: true, avatarUrl: true } },
   doctor: {
     include: {
-      user: { select: { id: true, name: true, email: true, phone: true } },
+      user: { select: { id: true, name: true, email: true, phone: true, avatarUrl: true } },
     },
   },
 };
@@ -78,6 +156,7 @@ const updateStatus = async ({ id, userId, role, status }) => {
     }
     if (status === 'CANCELLED' || status === 'COMPLETED') {
       const next = await prisma.appointment.update({ where: { id }, data: { status }, include: appointmentInclude });
+      await broadcastAfterCancel(appointment, status);
       return next;
     }
     // Doctors may also confirm pending appointments
@@ -99,15 +178,42 @@ const updateStatus = async ({ id, userId, role, status }) => {
       throw new ApiError(400, `Cannot cancel an appointment that is already ${appointment.status.toLowerCase()}.`);
     }
     const next = await prisma.appointment.update({ where: { id }, data: { status }, include: appointmentInclude });
+    await broadcastAfterCancel(appointment, status);
     return next;
   }
 
   throw new ApiError(403, 'Forbidden.');
 };
 
+/** After an appointment is cancelled, broadcast the freed slot to the room. */
+const broadcastAfterCancel = async (appointment, status) => {
+  if (status !== 'CANCELLED' || !appointment.dailyCapacityId) return;
+
+  const capacity = await prisma.dailyCapacity.findUnique({
+    where: { id: appointment.dailyCapacityId },
+  });
+  if (!capacity) return;
+
+  const booked = await prisma.appointment.count({
+    where: { dailyCapacityId: capacity.id, status: { not: 'CANCELLED' } },
+  });
+  const date = capacity.date.toISOString().slice(0, 10);
+
+  emitCapacityUpdate({
+    doctorId: capacity.doctorId,
+    date,
+    capacity: {
+      booked,
+      totalCapacity: capacity.totalCapacity,
+      available: Math.max(0, capacity.totalCapacity - booked),
+    },
+  });
+};
+
 module.exports = {
   getAppointment,
   createAppointment,
+  createDailyCapacityBooking,
   listPatientAppointments,
   listDoctorAppointments,
   updateStatus,

@@ -1,33 +1,63 @@
 import { useMemo, useState } from "react";
-import { FileText, Download, Search, FileHeart } from "lucide-react";
+import { FileText, Download, Search, FileHeart, Loader2, FileJson } from "lucide-react";
 import { useAppointments } from "../../context/AppointmentsContext";
-import { DEMO_PATIENT_ID } from "../../utils/constants";
-import { useDoctors } from "../../context/DoctorsContext";
+import { usePrescriptions } from "../../context/PrescriptionsContext";
 import { useToast } from "../../context/ToastContext";
-import { formatDate } from "../../utils/helpers";
+import healthRecordsApi from "../../api/healthRecords";
+import { downloadJson, formatDate } from "../../utils/helpers";
 import EmptyState from "../../components/shared/EmptyState";
 
 export default function HealthRecords() {
-  const { appointments } = useAppointments();
-  const { getDoctorById } = useDoctors();
+  const { appointments, isLoading } = useAppointments();
+  const { prescriptions } = usePrescriptions();
   const { addToast } = useToast();
   const [search, setSearch] = useState("");
+  const [exportingId, setExportingId] = useState(null);
 
+  // The API list is already scoped to the logged-in patient; completed
+  // appointments act as the health-record timeline (real HealthRecord
+  // records arrive with the healthRecords API wiring later).
   const records = useMemo(() => {
     return appointments
-      .filter((a) => a.patientId === DEMO_PATIENT_ID && a.status === "completed")
-      .map((a) => ({ ...a, doctor: getDoctorById(a.doctorId) }))
-      .filter((r) => r.doctor)
-      .filter(
-        (r) =>
-          r.doctor.name.toLowerCase().includes(search.toLowerCase()) ||
-          r.doctor.specialty.toLowerCase().includes(search.toLowerCase())
-      )
+      .filter((a) => a.status === "completed")
+      .filter((r) => {
+        if (!search) return true;
+        const name = r.doctor?.name || "";
+        const specialty = r.doctor?.specialty || "";
+        return (
+          name.toLowerCase().includes(search.toLowerCase()) ||
+          specialty.toLowerCase().includes(search.toLowerCase())
+        );
+      })
       .sort((a, b) => new Date(b.date) - new Date(a.date));
-  }, [appointments, getDoctorById, search]);
+  }, [appointments, search]);
 
   const handleDownload = (record) => {
     addToast(`Downloading record from ${formatDate(record.date)} (demo).`, "info");
+  };
+
+  // The FHIR export needs the real HealthRecord id — look it up by the
+  // appointment id from the prescriptions (health-records) list.
+  const findRecordId = (appointmentId) =>
+    prescriptions.find((p) => p.appointmentId === appointmentId)?.id;
+
+  const handleExportFhir = async (record) => {
+    const recordId = findRecordId(record.id);
+    if (!recordId) {
+      addToast("No FHIR export available for this visit yet.", "info");
+      return;
+    }
+    setExportingId(record.id);
+    try {
+      const data = await healthRecordsApi.getHealthRecordFhir(recordId);
+      const fhir = data.fhir ?? data;
+      downloadJson(`health-record-${recordId}.json`, fhir);
+      addToast("FHIR export downloaded.", "success");
+    } catch (err) {
+      addToast(err.message || "Could not export the record as FHIR.", "error");
+    } finally {
+      setExportingId(null);
+    }
   };
 
   return (
@@ -52,7 +82,12 @@ export default function HealthRecords() {
         />
       </div>
 
-      {records.length === 0 ? (
+      {isLoading ? (
+        <div className="flex items-center justify-center gap-2 py-16 text-gray-400">
+          <Loader2 size={20} className="animate-spin text-teal-600" aria-hidden="true" />
+          <span className="text-sm">Loading records...</span>
+        </div>
+      ) : records.length === 0 ? (
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm">
           <EmptyState
             icon={FileHeart}
@@ -91,13 +126,27 @@ export default function HealthRecords() {
                   {record.notes || "No additional notes recorded for this visit."}
                 </div>
 
-                <button
-                  onClick={() => handleDownload(record)}
-                  className="flex items-center gap-1.5 text-xs font-medium text-teal-600 hover:underline mt-4"
-                >
-                  <Download size={14} aria-hidden="true" />
-                  Download Prescription
-                </button>
+                <div className="flex flex-wrap items-center gap-4 mt-4">
+                  <button
+                    onClick={() => handleDownload(record)}
+                    className="flex items-center gap-1.5 text-xs font-medium text-teal-600 hover:underline"
+                  >
+                    <Download size={14} aria-hidden="true" />
+                    Download Prescription
+                  </button>
+                  <button
+                    onClick={() => handleExportFhir(record)}
+                    disabled={exportingId === record.id}
+                    className="flex items-center gap-1.5 text-xs font-medium text-gray-600 hover:text-teal-600 hover:underline disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {exportingId === record.id ? (
+                      <Loader2 size={14} className="animate-spin" aria-hidden="true" />
+                    ) : (
+                      <FileJson size={14} aria-hidden="true" />
+                    )}
+                    Export as FHIR
+                  </button>
+                </div>
               </div>
             </div>
           ))}

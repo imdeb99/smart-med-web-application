@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { Stethoscope, User, UserRound } from "lucide-react";
+import { Stethoscope, User, UserRound, Loader2 } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
 import { useToast } from "../../context/ToastContext";
 import useFormValidation, { validators } from "../../hooks/useFormValidation";
@@ -19,9 +19,11 @@ const initialForm = {
   bmdcId: "",
   qualification: "",
   experienceYears: "",
+  consultationFee: "",
 };
 
-const min4 = validators.minLength(4);
+// Backend requires min 8 chars (see backend/src/modules/auth/auth.routes.js).
+const min8 = validators.minLength(8);
 
 export default function Register() {
   const [accountType, setAccountType] = useState("patient");
@@ -35,28 +37,43 @@ export default function Register() {
       name: validators.required,
       email: validators.email,
       phone: validators.phone,
-      password: (v) => min4(v),
+      password: min8,
       confirmPassword: (v, allValues) =>
         v !== allValues.password ? "Passwords do not match." : "",
       ...(accountType === "doctor"
-        ? { bmdcId: validators.required, qualification: validators.required, experienceYears: validators.number }
+        ? {
+            bmdcId: validators.required,
+            qualification: validators.required,
+            experienceYears: validators.number,
+            consultationFee: validators.number,
+          }
         : {}),
     });
 
   const onSubmit = async (form) => {
-    const result = register({
+    setFormError("");
+    const result = await register({
       name: form.name,
       email: form.email,
       phone: form.phone,
       password: form.password,
-      role: accountType,
+      role: accountType.toUpperCase(), // backend expects PATIENT|DOCTOR
       ...(accountType === "doctor"
-        ? { specialty: form.specialty, bmdcId: form.bmdcId, verified: false }
-        : {}),
+        ? {
+            specialty: form.specialty,
+            bmdcId: form.bmdcId,
+            bio: form.qualification,
+            consultationFee: Number(form.consultationFee),
+          }
+        : {
+            dob: form.dob || null,
+            gender: form.gender,
+          }),
     });
 
     if (!result.success) {
       setFormError(result.error);
+      addToast(result.error, "error");
       return;
     }
 
@@ -118,6 +135,7 @@ export default function Register() {
               onChange={handleChange}
               onBlur={handleBlur}
               error={touched.name ? errors.name : ""}
+              disabled={submitting}
             />
             <Input
               type="tel"
@@ -129,6 +147,7 @@ export default function Register() {
               onChange={handleChange}
               onBlur={handleBlur}
               error={touched.phone ? errors.phone : ""}
+              disabled={submitting}
             />
           </div>
 
@@ -142,6 +161,7 @@ export default function Register() {
             onChange={handleChange}
             onBlur={handleBlur}
             error={touched.email ? errors.email : ""}
+            disabled={submitting}
           />
 
           {accountType === "patient" ? (
@@ -153,12 +173,14 @@ export default function Register() {
                 value={values.dob}
                 onChange={handleChange}
                 onBlur={handleBlur}
+                disabled={submitting}
               />
               <Select
                 name="gender"
                 label="Gender"
                 value={values.gender}
                 onChange={handleChange}
+                disabled={submitting}
               >
                 <option>Female</option>
                 <option>Male</option>
@@ -173,6 +195,7 @@ export default function Register() {
                   label="Specialty"
                   value={values.specialty}
                   onChange={handleChange}
+                  disabled={submitting}
                 >
                   {specialties.map((s) => (
                     <option key={s} value={s}>
@@ -188,6 +211,7 @@ export default function Register() {
                   onChange={handleChange}
                   onBlur={handleBlur}
                   error={touched.bmdcId ? errors.bmdcId : ""}
+                  disabled={submitting}
                 />
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -199,7 +223,22 @@ export default function Register() {
                   onChange={handleChange}
                   onBlur={handleBlur}
                   error={touched.qualification ? errors.qualification : ""}
+                  disabled={submitting}
                 />
+                <Input
+                  type="number"
+                  name="consultationFee"
+                  label="Consultation Fee (৳)"
+                  placeholder="e.g. 1000"
+                  min={0}
+                  value={values.consultationFee}
+                  onChange={handleChange}
+                  onBlur={handleBlur}
+                  error={touched.consultationFee ? errors.consultationFee : ""}
+                  disabled={submitting}
+                />
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <Input
                   type="number"
                   name="experienceYears"
@@ -210,6 +249,7 @@ export default function Register() {
                   onChange={handleChange}
                   onBlur={handleBlur}
                   error={touched.experienceYears ? errors.experienceYears : ""}
+                  disabled={submitting}
                 />
               </div>
               <p className="text-xs text-gray-400">
@@ -223,12 +263,13 @@ export default function Register() {
               type="password"
               name="password"
               label="Password"
-              placeholder="••••••••"
+              placeholder="At least 8 characters"
               autoComplete="new-password"
               value={values.password}
               onChange={handleChange}
               onBlur={handleBlur}
               error={touched.password ? errors.password : ""}
+              disabled={submitting}
             />
             <Input
               type="password"
@@ -240,6 +281,7 @@ export default function Register() {
               onChange={handleChange}
               onBlur={handleBlur}
               error={touched.confirmPassword ? errors.confirmPassword : ""}
+              disabled={submitting}
             />
           </div>
 
@@ -248,9 +290,16 @@ export default function Register() {
           <button
             type="submit"
             disabled={submitting}
-            className="w-full bg-teal-600 hover:bg-teal-700 disabled:bg-gray-300 disabled:cursor-not-allowed text-white font-medium py-2.5 rounded-lg transition-colors"
+            className="w-full flex items-center justify-center gap-2 bg-teal-600 hover:bg-teal-700 disabled:bg-gray-300 disabled:cursor-not-allowed text-white font-medium py-2.5 rounded-lg transition-colors"
           >
-            {submitting ? "Creating account..." : "Create Account"}
+            {submitting ? (
+              <>
+                <Loader2 size={16} className="animate-spin" aria-hidden="true" />
+                Creating account...
+              </>
+            ) : (
+              "Create Account"
+            )}
           </button>
         </form>
 

@@ -18,6 +18,19 @@ const notFoundHandler = (req, res, next) => {
 
 // eslint-disable-next-line no-unused-vars
 const errorHandler = (err, req, res, next) => {
+  // Multer errors (file size limit, unexpected field, etc.)
+  if (err && err.name === 'MulterError') {
+    const message =
+      err.code === 'LIMIT_FILE_SIZE'
+        ? 'Avatar image is too large. Maximum size is 5MB.'
+        : `Upload failed: ${err.message}`;
+    return res.status(400).json({
+      success: false,
+      data: null,
+      error: { message },
+    });
+  }
+
   // Prisma unique constraint violation (P2002)
   if (err.code === 'P2002') {
     const target = Array.isArray(err.meta?.target) ? err.meta.target.join(', ') : 'field';

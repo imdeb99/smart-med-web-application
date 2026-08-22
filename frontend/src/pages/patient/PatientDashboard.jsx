@@ -12,10 +12,10 @@ import {
 } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
 import { useAppointments } from "../../context/AppointmentsContext";
-import { DEMO_PATIENT_ID } from "../../utils/constants";
 import AppointmentCard from "../../components/shared/AppointmentCard";
 import PageSkeleton from "../../components/shared/PageSkeleton";
 import EmptyState from "../../components/shared/EmptyState";
+import { Loader2 } from "lucide-react";
 
 const quickActions = [
   { label: "Find a Doctor", to: "/patient/doctors", icon: Search, color: "bg-teal-50 text-teal-600" },
@@ -26,12 +26,13 @@ const quickActions = [
 
 export default function PatientDashboard() {
   const { user } = useAuth();
-  const { appointments } = useAppointments();
+  const { appointments, isLoading } = useAppointments();
   const navigate = useNavigate();
 
   if (!user) return <PageSkeleton />;
 
-  const myAppointments = appointments.filter((a) => a.patientId === DEMO_PATIENT_ID);
+  // The API list is already scoped to the logged-in patient.
+  const myAppointments = appointments;
   const upcoming = myAppointments
     .filter((a) => a.status === "upcoming")
     .sort((a, b) => new Date(a.date) - new Date(b.date));
@@ -98,7 +99,12 @@ export default function PatientDashboard() {
         </Link>
       </div>
 
-      {upcoming.length === 0 ? (
+      {isLoading ? (
+        <div className="flex items-center justify-center gap-2 py-16 text-gray-400">
+          <Loader2 size={20} className="animate-spin text-teal-600" aria-hidden="true" />
+          <span className="text-sm">Loading appointments...</span>
+        </div>
+      ) : upcoming.length === 0 ? (
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm">
           <EmptyState
             icon={CalendarX2}

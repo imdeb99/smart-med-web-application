@@ -1,34 +1,41 @@
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { CalendarX } from "lucide-react";
+import { CalendarX, Loader2 } from "lucide-react";
 import { useAppointments } from "../../context/AppointmentsContext";
-import { DEMO_PATIENT_ID } from "../../utils/constants";
-import { useDoctors } from "../../context/DoctorsContext";
 import { useToast } from "../../context/ToastContext";
 import { getNextDays, formatDate } from "../../utils/helpers";
 import AppointmentCard from "../../components/shared/AppointmentCard";
 import Modal from "../../components/shared/Modal";
 import EmptyState from "../../components/shared/EmptyState";
+import { downloadAppointmentPdf } from "../../api/appointments";
 
 export default function PatientAppointments() {
-  const { appointments, cancelAppointment, rescheduleAppointment } = useAppointments();
-  const { getDoctorById } = useDoctors();
+  const { appointments, isLoading, error, cancelAppointment, refresh } = useAppointments();
   const { addToast } = useToast();
   const navigate = useNavigate();
 
   const [tab, setTab] = useState("upcoming");
   const [cancelTarget, setCancelTarget] = useState(null);
+  const [cancelling, setCancelling] = useState(false);
   const [rescheduleTarget, setRescheduleTarget] = useState(null);
   const [newDate, setNewDate] = useState(null);
   const [newSlot, setNewSlot] = useState(null);
 
   const days = useMemo(() => getNextDays(7), []);
 
-  const myAppointments = appointments.filter((a) => a.patientId === DEMO_PATIENT_ID);
-  const upcoming = myAppointments
+  const handleDownloadPdf = async (appointment) => {
+    try {
+      await downloadAppointmentPdf(appointment.id);
+      addToast("Appointment ticket downloaded.", "success");
+    } catch (err) {
+      addToast(err.message || "Could not download the ticket.", "error");
+    }
+  };
+
+  const upcoming = appointments
     .filter((a) => a.status === "upcoming")
     .sort((a, b) => new Date(a.date) - new Date(b.date));
-  const past = myAppointments
+  const past = appointments
     .filter((a) => a.status !== "upcoming")
     .sort((a, b) => new Date(b.date) - new Date(a.date));
 
@@ -40,20 +47,35 @@ export default function PatientAppointments() {
     setNewSlot(null);
   };
 
-  const confirmCancel = () => {
-    cancelAppointment(cancelTarget.id);
-    addToast("Appointment cancelled.", "info");
-    setCancelTarget(null);
+  const confirmCancel = async () => {
+    setCancelling(true);
+    try {
+      await cancelAppointment(cancelTarget.id);
+      addToast("Appointment cancelled.", "info");
+      setCancelTarget(null);
+    } catch (err) {
+      addToast(err.message || "Could not cancel the appointment.", "error");
+    } finally {
+      setCancelling(false);
+    }
   };
 
-  const confirmReschedule = () => {
+  const confirmReschedule = async () => {
     if (!newDate || !newSlot) return;
-    rescheduleAppointment(rescheduleTarget.id, newDate, newSlot);
-    addToast("Appointment rescheduled successfully.", "success");
-    setRescheduleTarget(null);
+    // The backend has no reschedule endpoint, so reschedule = cancel the old
+    // appointment and the patient books a new one from checkout.
+    try {
+      await cancelAppointment(rescheduleTarget.id);
+      addToast("Appointment cancelled. Book a new slot to reschedule.", "info");
+      setRescheduleTarget(null);
+      navigate(`/patient/book/${rescheduleTarget.doctorId}`);
+    } catch (err) {
+      addToast(err.message || "Could not reschedule the appointment.", "error");
+    }
   };
 
-  const rescheduleDoctor = rescheduleTarget && getDoctorById(rescheduleTarget.doctorId);
+  // Appointments from the API embed the doctor record.
+  const rescheduleDoctor = rescheduleTarget?.doctor || null;
 
   return (
     <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
@@ -75,7 +97,28 @@ export default function PatientAppointments() {
         ))}
       </div>
 
-      {list.length === 0 ? (
+      {isLoading ? (
+        <div className="flex items-center justify-center gap-2 py-16 text-gray-400">
+          <Loader2 size={20} className="animate-spin text-teal-600" aria-hidden="true" />
+          <span className="text-sm">Loading appointments...</span>
+        </div>
+      ) : error ? (
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm">
+          <EmptyState
+            icon={CalendarX}
+            title="Could not load appointments"
+            message={error}
+            action={
+              <button
+                onClick={refresh}
+                className="inline-flex items-center gap-2 bg-teal-600 hover:bg-teal-700 text-white font-medium px-5 py-2.5 rounded-xl transition-colors"
+              >
+                Try Again
+              </button>
+            }
+          />
+        </div>
+      ) : list.length === 0 ? (
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm">
           <EmptyState
             icon={CalendarX}
@@ -95,6 +138,7 @@ export default function PatientAppointments() {
               appointment={appointment}
               onCancel={tab === "upcoming" ? () => setCancelTarget(appointment) : undefined}
               onReschedule={tab === "upcoming" ? () => openReschedule(appointment) : undefined}
+              onDownload={handleDownloadPdf}
               onJoin={
                 tab === "upcoming"
                   ? () => navigate(`/patient/consultation/${appointment.id}`)
@@ -120,9 +164,11 @@ export default function PatientAppointments() {
             </button>
             <button
               onClick={confirmCancel}
-              className="px-4 py-2 text-sm font-medium bg-red-600 hover:bg-red-700 text-white rounded-lg"
+              disabled={cancelling}
+              className="flex items-center gap-2 px-4 py-2 text-sm font-medium bg-red-600 hover:bg-red-700 disabled:bg-gray-300 text-white rounded-lg"
             >
-              Yes, Cancel
+              {cancelling && <Loader2 size={14} className="animate-spin" aria-hidden="true" />}
+              {cancelling ? "Cancelling..." : "Yes, Cancel"}
             </button>
           </>
         }
@@ -184,7 +230,11 @@ export default function PatientAppointments() {
 
           <h4 className="text-xs font-semibold text-gray-600 mb-2">Select Time</h4>
           {!rescheduleDoctor || rescheduleDoctor.availableSlots.length === 0 ? (
-            <p className="text-sm text-gray-400">No slots available for this doctor.</p>
+            <p className="text-sm text-gray-400">
+              {rescheduleDoctor
+                ? "No availability configured — pick a standard slot after booking."
+                : "Loading doctor..."}
+            </p>
           ) : (
             <div className="flex flex-wrap gap-2">
               {rescheduleDoctor.availableSlots.map((slot) => (

@@ -1,0 +1,68 @@
+# ------------------------------------------------------------------
+# SMART-MED root .gitignore
+# ------------------------------------------------------------------
+
+# --- Secrets ---
+# Never commit environment files. Copy .env.example -> .env and fill in.
+.env
+.env.*
+!.env.example
+backend/.env
+backend/.env.*
+!backend/.env.example
+frontend/.env
+frontend/.env.*
+!frontend/.env.example
+
+# --- Dependencies ---
+node_modules/
+**/node_modules/
+
+# --- Build output ---
+dist/
+build/
+dist-ssr/
+
+# --- Logs ---
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# --- Local config / secrets file variants ---
+*.local
+*.local.json
+
+# --- Test / coverage ---
+coverage/
+.tmp/
+*.test-output.*
+
+# --- Artifacts & screenshots ---
+*.png
+*.report.html
+*.pdf
+!frontend/public/**/*.png
+!frontend/public/**/*.pdf
+
+# --- Command Code (AI coding tool) local config/cache/session ---
+.commandcode/
+.cc/
+.commandcode.*
+
+# --- OS files ---
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# --- Editor directories ---
+.vscode/*
+!.vscode/extensions.json
+.idea
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?

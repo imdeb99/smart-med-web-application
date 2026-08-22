@@ -1,9 +1,9 @@
 import { useMemo, useState } from "react";
 import { Search, SlidersHorizontal, Stethoscope } from "lucide-react";
-import { specialties } from "../../data/mockDoctors";
 import { useDoctors } from "../../context/DoctorsContext";
 import DoctorCard from "../../components/patient/DoctorCard";
 import EmptyState from "../../components/shared/EmptyState";
+import LoadingSkeleton from "../../components/shared/LoadingSkeleton";
 
 const ratingOptions = [
   { label: "Any Rating", value: 0 },
@@ -17,12 +17,20 @@ const sortOptions = [
   { label: "Lowest Fee", value: "fee" },
 ];
 
+// Specialty list derived from the real doctor data (the backend has no
+// standalone specialty catalog endpoint).
+function getSpecialties(doctors) {
+  return [...new Set(doctors.map((d) => d.specialty).filter(Boolean))].sort();
+}
+
 export default function DoctorListing() {
-  const { doctors } = useDoctors();
+  const { doctors, isLoading, error } = useDoctors();
   const [search, setSearch] = useState("");
   const [specialty, setSpecialty] = useState("All");
   const [minRating, setMinRating] = useState(0);
   const [sortBy, setSortBy] = useState("rating");
+
+  const specialties = useMemo(() => getSpecialties(doctors), [doctors]);
 
   const filteredDoctors = useMemo(() => {
     let result = doctors.filter((doc) => doc.verified).filter((doc) => {
@@ -49,7 +57,7 @@ export default function DoctorListing() {
       <div className="mb-8">
         <h1 className="text-3xl font-bold text-gray-800">Find a Doctor</h1>
         <p className="text-gray-500 mt-2">
-          Browse {doctors.filter((d) => d.verified).length}+ verified specialists and book an appointment in minutes.
+          Browse {doctors.filter((d) => d.verified).length} verified specialists and book an appointment in minutes.
         </p>
       </div>
 
@@ -121,10 +129,28 @@ export default function DoctorListing() {
 
       <p className="text-sm text-gray-500 mb-4 flex items-center gap-1.5" aria-live="polite">
         <SlidersHorizontal size={14} aria-hidden="true" />
-        {filteredDoctors.length} doctor{filteredDoctors.length !== 1 && "s"} found
+        {isLoading ? "Loading doctors..." : `${filteredDoctors.length} doctor${filteredDoctors.length !== 1 && "s"} found`}
       </p>
 
-      {filteredDoctors.length === 0 ? (
+      {isLoading ? (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+          {Array.from({ length: 6 }).map((_, i) => (
+            <div key={i} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 space-y-3">
+              <LoadingSkeleton className="h-16 w-16 rounded-full" />
+              <LoadingSkeleton className="h-4 w-3/4" />
+              <LoadingSkeleton className="h-3 w-1/2" />
+            </div>
+          ))}
+        </div>
+      ) : error ? (
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm">
+          <EmptyState
+            icon={Stethoscope}
+            title="Could not load doctors"
+            message={error}
+          />
+        </div>
+      ) : filteredDoctors.length === 0 ? (
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm">
           <EmptyState
             icon={Stethoscope}

@@ -1,10 +1,11 @@
 const prisma = require('../../config/db');
 const { ApiError } = require('../../middleware/errorHandler');
+const { mapHealthRecordToFhir } = require('./fhirMapper');
 
 const recordInclude = {
   appointment: { select: { id: true, scheduledAt: true, type: true, status: true } },
-  doctor: { include: { user: { select: { id: true, name: true } } } },
-  patient: { select: { id: true, name: true, email: true } },
+  doctor: { include: { user: { select: { id: true, name: true, avatarUrl: true } } } },
+  patient: { select: { id: true, name: true, email: true, avatarUrl: true } },
 };
 
 /**
@@ -52,9 +53,9 @@ const listByPatient = async (patientId, { page = 1, limit = 20 }) => {
   return { records, pagination: { page, limit, total, pages: Math.ceil(total / limit) } };
 };
 
-/** Doctor-only: list records they authored (optionally filtered by patient). */
-const listByDoctor = async (doctorId, { patientId, page = 1, limit = 20 }) => {
-  const where = { doctorId, ...(patientId ? { patientId } : {}) };
+/** Doctor-only: list records they authored (optionally filtered by patient/appointment). */
+const listByDoctor = async (doctorId, { patientId, appointmentId, page = 1, limit = 20 }) => {
+  const where = { doctorId, ...(patientId ? { patientId } : {}), ...(appointmentId ? { appointmentId } : {}) };
   const [total, records] = await Promise.all([
     prisma.healthRecord.count({ where }),
     prisma.healthRecord.findMany({
@@ -68,4 +69,30 @@ const listByDoctor = async (doctorId, { patientId, page = 1, limit = 20 }) => {
   return { records, pagination: { page, limit, total, pages: Math.ceil(total / limit) } };
 };
 
-module.exports = { createRecord, listByPatient, listByDoctor };
+/**
+ * FHIR export: fetches one record (with relations) and converts it to a
+ * minimal FHIR R4 DocumentReference. Access is enforced here by role:
+ *   - PATIENT: only their own records
+ *   - DOCTOR:  only records they authored
+ *   - ADMIN:   any record
+ */
+const exportAsFhir = async ({ recordId, user }) => {
+  const record = await prisma.healthRecord.findUnique({
+    where: { id: recordId },
+    include: recordInclude,
+  });
+  if (!record) {
+    throw new ApiError(404, 'Health record not found.');
+  }
+
+  if (user.role === 'PATIENT' && record.patientId !== user.id) {
+    throw new ApiError(403, 'You can only export your own health records.');
+  }
+  if (user.role === 'DOCTOR' && record.doctorId !== user.doctorProfile.id) {
+    throw new ApiError(403, 'You can only export records you authored.');
+  }
+
+  return mapHealthRecordToFhir(record);
+};
+
+module.exports = { createRecord, listByPatient, listByDoctor, exportAsFhir };

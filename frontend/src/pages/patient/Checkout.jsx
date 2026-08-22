@@ -1,13 +1,13 @@
 import { useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { Wallet, CreditCard, Smartphone, Banknote, CheckCircle2 } from "lucide-react";
+import { Wallet, CreditCard, Smartphone, Banknote, CheckCircle2, FileDown } from "lucide-react";
 import { formatDate } from "../../utils/helpers";
 import { useAppointments } from "../../context/AppointmentsContext";
-import { useDoctors } from "../../context/DoctorsContext";
 import { useToast } from "../../context/ToastContext";
 import useFormValidation, { validators } from "../../hooks/useFormValidation";
 import Modal from "../../components/shared/Modal";
 import { Input } from "../../components/shared/Field";
+import { downloadAppointmentPdf } from "../../api/appointments";
 
 const paymentMethods = [
   { id: "bkash", label: "bKash", icon: Smartphone },
@@ -34,13 +34,27 @@ export default function Checkout() {
   const location = useLocation();
   const navigate = useNavigate();
   const { bookAppointment } = useAppointments();
-  const { getDoctorById } = useDoctors();
   const { addToast } = useToast();
 
   const booking = location.state;
   const [method, setMethod] = useState("bkash");
   const [showSuccess, setShowSuccess] = useState(false);
   const [confirmedAppointment, setConfirmedAppointment] = useState(null);
+  const [bookingError, setBookingError] = useState("");
+  const [downloadingPdf, setDownloadingPdf] = useState(false);
+
+  const handleDownloadPdf = async () => {
+    if (!confirmedAppointment) return;
+    setDownloadingPdf(true);
+    try {
+      await downloadAppointmentPdf(confirmedAppointment.id);
+      addToast("Appointment ticket downloaded.", "success");
+    } catch (err) {
+      addToast(err.message || "Could not download the ticket.", "error");
+    } finally {
+      setDownloadingPdf(false);
+    }
+  };
 
   const needsMobile = method === "bkash" || method === "nagad";
   const needsCard = method === "card";
@@ -87,21 +101,33 @@ export default function Checkout() {
     );
   }
 
-  const doctor = getDoctorById(booking.doctorId);
+  // Doctor details are passed through booking state from the booking page,
+  // so no separate doctor fetch is needed here.
+  const doctor = {
+    name: booking.doctorName || "Doctor",
+    specialty: booking.doctorSpecialty || "",
+    avatar: booking.doctorAvatar || "",
+  };
   const total = booking.fee + PLATFORM_FEE;
 
   const onSubmit = async () => {
-    const appointment = bookAppointment({
-      doctorId: booking.doctorId,
-      date: booking.date,
-      time: booking.time,
-      type: booking.type,
-      fee: booking.fee,
-      notes: "",
-    });
-    setConfirmedAppointment(appointment);
-    setShowSuccess(true);
-    addToast("Payment successful. Appointment booked!", "success");
+    setBookingError("");
+    try {
+      const appointment = await bookAppointment({
+        doctorId: booking.doctorId,
+        date: booking.date,
+        time: booking.time,
+        type: booking.type,
+        fee: booking.fee,
+        notes: "",
+      });
+      setConfirmedAppointment(appointment);
+      setShowSuccess(true);
+      addToast("Payment successful. Appointment booked!", "success");
+    } catch (err) {
+      setBookingError(err.message || "Could not book the appointment. Please try again.");
+      addToast(bookingError || "Could not book the appointment.", "error");
+    }
   };
 
   return (
@@ -252,12 +278,22 @@ export default function Checkout() {
         onClose={() => navigate("/patient/appointments")}
         title="Payment Successful"
         footer={
-          <button
-            onClick={() => navigate("/patient/appointments")}
-            className="bg-teal-600 hover:bg-teal-700 text-white font-medium px-5 py-2 rounded-lg transition-colors"
-          >
-            View My Appointments
-          </button>
+          <>
+            <button
+              onClick={handleDownloadPdf}
+              disabled={downloadingPdf}
+              className="flex items-center gap-2 border border-teal-200 text-teal-700 hover:bg-teal-50 font-medium px-4 py-2 rounded-lg transition-colors disabled:opacity-50"
+            >
+              <FileDown size={15} aria-hidden="true" />
+              {downloadingPdf ? "Downloading..." : "Download PDF"}
+            </button>
+            <button
+              onClick={() => navigate("/patient/appointments")}
+              className="bg-teal-600 hover:bg-teal-700 text-white font-medium px-5 py-2 rounded-lg transition-colors"
+            >
+              View My Appointments
+            </button>
+          </>
         }
       >
         <div className="flex flex-col items-center text-center py-2">

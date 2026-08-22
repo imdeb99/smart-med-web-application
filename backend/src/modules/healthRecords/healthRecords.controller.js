@@ -17,4 +17,12 @@ const listMyRecords = asyncHandler(async (req, res) => {
   res.json({ success: true, data: result, error: null });
 });
 
-module.exports = { createRecord, listMyRecords };
+const exportAsFhir = asyncHandler(async (req, res) => {
+  const fhirResource = await healthRecordService.exportAsFhir({
+    recordId: req.params.id,
+    user: req.user,
+  });
+  res.json({ success: true, data: { fhir: fhirResource }, error: null });
+});
+
+module.exports = { createRecord, listMyRecords, exportAsFhir };

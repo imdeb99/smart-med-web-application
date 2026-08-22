@@ -4,6 +4,45 @@ html {
   scroll-behavior: smooth;
 }
 
+/* Pulsing glow that travels along the hero ECG line (pure CSS, no libs). */
+@keyframes ecg-sweep-glow {
+  0% {
+    opacity: 0;
+    transform: translateX(-30%);
+  }
+  10% {
+    opacity: 1;
+  }
+  90% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translateX(130%);
+  }
+}
+
+.ecg-sweep {
+  position: relative;
+  z-index: 1;
+}
+
+.ecg-sweep::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  width: 40%;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(167, 243, 208, 0.85),
+    transparent
+  );
+  filter: blur(6px);
+  animation: ecg-sweep-glow 3.2s ease-in-out infinite;
+  pointer-events: none;
+}
+
 body {
   @apply bg-gray-50 text-gray-800 antialiased;
 }

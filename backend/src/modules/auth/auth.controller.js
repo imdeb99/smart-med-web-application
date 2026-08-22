@@ -12,7 +12,13 @@ const login = asyncHandler(async (req, res) => {
 });
 
 const me = asyncHandler(async (req, res) => {
-  res.json({ success: true, data: { user: req.user }, error: null });
+  // req.user comes straight from Prisma (includes passwordHash) — sanitize.
+  res.json({ success: true, data: { user: authService.sanitize(req.user) }, error: null });
 });
 
-module.exports = { register, login, me };
+const updateProfile = asyncHandler(async (req, res) => {
+  const user = await authService.updateProfile(req.user.id, req.body);
+  res.json({ success: true, data: { user }, error: null });
+});
+
+module.exports = { register, login, me, updateProfile };

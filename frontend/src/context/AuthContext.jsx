@@ -1,76 +1,110 @@
-import { createContext, useContext, useState } from "react";
-import mockUsers from "../data/mockUsers";
+import { createContext, useCallback, useContext, useEffect, useState } from "react";
+import authApi from "../api/auth";
+import usersApi from "../api/users";
+import { getToken, setToken, clearToken, ApiError } from "../api/client";
+import { mapUserFromApi } from "../api/adapters";
 
 const AuthContext = createContext(null);
-const SESSION_KEY = "smartmed_user";
-const USERS_KEY = "smartmed_users";
 
 export function AuthProvider({ children }) {
-  const [user, setUser] = useState(() => {
+  const [user, setUser] = useState(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  // On mount: if a JWT exists, verify it against /api/auth/me and load the
+  // user. An invalid/expired token clears the session.
+  useEffect(() => {
+    let cancelled = false;
+
+    const bootstrap = async () => {
+      const token = getToken();
+      if (!token) {
+        setIsLoading(false);
+        return;
+      }
+
+      try {
+        const data = await authApi.getMe();
+        if (!cancelled) setUser(mapUserFromApi(data.user ?? null));
+      } catch {
+        // Invalid or expired token — drop the session silently.
+        if (!cancelled) {
+          clearToken();
+          setUser(null);
+        }
+      } finally {
+        if (!cancelled) setIsLoading(false);
+      }
+    };
+
+    bootstrap();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const login = useCallback(async ({ email, password }) => {
+    setError("");
     try {
-      const stored = localStorage.getItem(SESSION_KEY);
-      return stored ? JSON.parse(stored) : null;
-    } catch {
-      return null;
+      const data = await authApi.login(email, password);
+      setToken(data.token);
+      const user = mapUserFromApi(data.user);
+      setUser(user);
+      return { success: true, user };
+    } catch (err) {
+      const message = err instanceof ApiError ? err.message : "Something went wrong. Please try again.";
+      setError(message);
+      return { success: false, error: message };
     }
-  });
+  }, []);
 
-  // The full account directory: seeded demo accounts plus anyone who has
-  // registered through the UI this session, persisted so login keeps working
-  // after a refresh.
-  const [users, setUsers] = useState(() => {
+  const register = useCallback(async (userData) => {
+    setError("");
     try {
-      const stored = localStorage.getItem(USERS_KEY);
-      return stored ? JSON.parse(stored) : mockUsers;
-    } catch {
-      return mockUsers;
+      const data = await authApi.register(userData);
+      setToken(data.token);
+      const user = mapUserFromApi(data.user);
+      setUser(user);
+      return { success: true, user };
+    } catch (err) {
+      const message = err instanceof ApiError ? err.message : "Something went wrong. Please try again.";
+      setError(message);
+      return { success: false, error: message };
     }
-  });
+  }, []);
 
-  const persistUsers = (next) => {
-    setUsers(next);
-    localStorage.setItem(USERS_KEY, JSON.stringify(next));
-  };
-
-  const persistSession = (userData) => {
-    setUser(userData);
-    localStorage.setItem(SESSION_KEY, JSON.stringify(userData));
-  };
-
-  // Demo login: validates the email/password/role against the account directory.
-  const login = ({ email, password, role }) => {
-    const match = users.find(
-      (u) => u.email.toLowerCase() === email.trim().toLowerCase() && u.role === role
-    );
-    if (!match) {
-      return { success: false, error: "No account found with that email for this role." };
-    }
-    if (match.password !== password) {
-      return { success: false, error: "Incorrect password." };
-    }
-    persistSession(match);
-    return { success: true, user: match };
-  };
-
-  // Demo registration: adds a new account to the directory and signs them in.
-  const register = (userData) => {
-    const exists = users.some((u) => u.email.toLowerCase() === userData.email.toLowerCase());
-    if (exists) {
-      return { success: false, error: "An account with this email already exists." };
-    }
-    const newUser = { id: `user-${Date.now()}`, ...userData };
-    persistUsers([...users, newUser]);
-    persistSession(newUser);
-    return { success: true, user: newUser };
-  };
-
-  const logout = () => {
+  const logout = useCallback(() => {
+    clearToken();
     setUser(null);
-    localStorage.removeItem(SESSION_KEY);
-  };
+    setError("");
+  }, []);
+
+  /** Update own account fields (name/phone) via PATCH /auth/me. */
+  const updateProfile = useCallback(async (data) => {
+    setError("");
+    try {
+      const result = await authApi.updateProfile(data);
+      const user = mapUserFromApi(result.user);
+      setUser((prev) => ({ ...prev, ...user }));
+      return { success: true, user };
+    } catch (err) {
+      const message = err instanceof ApiError ? err.message : "Could not update the profile.";
+      setError(message);
+      return { success: false, error: message };
+    }
+  }, []);
+
+  /** Upload a new avatar for the current user. Returns the new avatar URL. */
+  const uploadAvatar = useCallback(async (file) => {
+    setError("");
+    const result = await usersApi.uploadMyAvatar(file);
+    const user = mapUserFromApi(result.user);
+    setUser((prev) => ({ ...prev, ...user }));
+    return user.avatar;
+  }, []);
 
   return (
-    <AuthContext.Provider value={{ user, login, register, logout }}>
+    <AuthContext.Provider value={{ user, isLoading, error, login, register, logout, updateProfile, uploadAvatar }}>
       {children}
     </AuthContext.Provider>
   );

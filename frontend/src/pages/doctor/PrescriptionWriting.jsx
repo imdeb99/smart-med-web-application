@@ -1,12 +1,12 @@
 import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { ArrowLeft, Plus, Trash2, Save } from "lucide-react";
+import { ArrowLeft, Plus, Trash2, Save, Loader2, FileJson } from "lucide-react";
 import DoctorLayout from "../../components/doctor/DoctorLayout";
 import { useAppointments } from "../../context/AppointmentsContext";
 import { usePrescriptions } from "../../context/PrescriptionsContext";
-import { usePatients } from "../../context/PatientsContext";
 import { useToast } from "../../context/ToastContext";
-import { formatDate } from "../../utils/helpers";
+import healthRecordsApi from "../../api/healthRecords";
+import { downloadJson, formatDate } from "../../utils/helpers";
 
 const emptyMedicine = { name: "", dosage: "", frequency: "", duration: "" };
 
@@ -15,11 +15,12 @@ export default function PrescriptionWriting() {
   const navigate = useNavigate();
   const { addToast } = useToast();
   const { appointments, completeAppointment } = useAppointments();
-  const { savePrescription, getPrescriptionByAppointment } = usePrescriptions();
-  const { getPatientById } = usePatients();
+  const { prescriptions, savePrescription, getPrescriptionByAppointment } = usePrescriptions();
 
   const appointment = appointments.find((a) => a.id === appointmentId);
-  const patient = appointment ? getPatientById(appointment.patientId) : null;
+  // The appointment response from the API embeds the full patient record —
+  // no separate patient lookup needed.
+  const patient = appointment?.patient;
   const existing = getPrescriptionByAppointment(appointmentId);
 
   const [diagnosis, setDiagnosis] = useState(existing?.diagnosis || "");
@@ -27,6 +28,8 @@ export default function PrescriptionWriting() {
   const [medicines, setMedicines] = useState(existing?.medicines || [{ ...emptyMedicine }]);
   const [advice, setAdvice] = useState(existing?.advice || "");
   const [followUpDate, setFollowUpDate] = useState(existing?.followUpDate || "");
+  const [saving, setSaving] = useState(false);
+  const [exportingFhir, setExportingFhir] = useState(false);
 
   if (!appointment || !patient) {
     return (
@@ -48,28 +51,55 @@ export default function PrescriptionWriting() {
   const removeMedicineRow = (index) =>
     setMedicines((prev) => prev.filter((_, i) => i !== index));
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     if (!diagnosis.trim()) {
       setDiagnosisError("Diagnosis is required.");
       return;
     }
     setDiagnosisError("");
-    savePrescription({
-      appointmentId,
-      patientId: patient.id,
-      doctorId: appointment.doctorId,
-      date: appointment.date,
-      diagnosis,
-      medicines: medicines.filter((m) => m.name.trim()),
-      advice,
-      followUpDate,
-    });
-    if (appointment.status === "upcoming") {
-      completeAppointment(appointment.id);
+    setSaving(true);
+    try {
+      await savePrescription({
+        appointmentId,
+        patientId: patient.id,
+        doctorId: appointment.doctorId,
+        date: appointment.date,
+        diagnosis,
+        medicines: medicines.filter((m) => m.name.trim()),
+        advice,
+        followUpDate,
+      });
+      if (appointment.status === "upcoming") {
+        await completeAppointment(appointment.id);
+      }
+      addToast("Prescription saved successfully.", "success");
+      navigate("/doctor/patients");
+    } catch (err) {
+      addToast(err.message || "Could not save the prescription.", "error");
+    } finally {
+      setSaving(false);
     }
-    addToast("Prescription saved successfully.", "success");
-    navigate("/doctor/patients");
+  };
+
+  // Export the saved health record for this appointment as a FHIR resource.
+  const handleExportFhir = async () => {
+    const record = prescriptions.find((p) => p.appointmentId === appointmentId);
+    if (!record?.id) {
+      addToast("Save the prescription first to export it as FHIR.", "info");
+      return;
+    }
+    setExportingFhir(true);
+    try {
+      const data = await healthRecordsApi.getHealthRecordFhir(record.id);
+      const fhir = data.fhir ?? data;
+      downloadJson(`health-record-${record.id}.json`, fhir);
+      addToast("FHIR export downloaded.", "success");
+    } catch (err) {
+      addToast(err.message || "Could not export the record as FHIR.", "error");
+    } finally {
+      setExportingFhir(false);
+    }
   };
 
   return (
@@ -218,13 +248,31 @@ export default function PrescriptionWriting() {
             />
           </div>
 
-          <button
-            type="submit"
-            className="flex items-center gap-2 bg-teal-600 hover:bg-teal-700 text-white font-medium px-6 py-2.5 rounded-xl transition-colors"
-          >
-            <Save size={16} aria-hidden="true" />
-            Save Prescription
-          </button>
+          <div className="flex flex-wrap items-center gap-4">
+            {existing && (
+              <button
+                type="button"
+                onClick={handleExportFhir}
+                disabled={exportingFhir}
+                className="flex items-center gap-2 border border-gray-200 hover:border-teal-300 text-gray-600 hover:text-teal-600 font-medium px-6 py-2.5 rounded-xl transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {exportingFhir ? (
+                  <Loader2 size={16} className="animate-spin" aria-hidden="true" />
+                ) : (
+                  <FileJson size={16} aria-hidden="true" />
+                )}
+                Export as FHIR
+              </button>
+            )}
+            <button
+              type="submit"
+              disabled={saving}
+              className="flex items-center gap-2 bg-teal-600 hover:bg-teal-700 disabled:bg-gray-300 disabled:cursor-not-allowed text-white font-medium px-6 py-2.5 rounded-xl transition-colors"
+            >
+              {saving ? <Loader2 size={16} className="animate-spin" aria-hidden="true" /> : <Save size={16} aria-hidden="true" />}
+              {saving ? "Saving..." : "Save Prescription"}
+            </button>
+          </div>
         </form>
       </div>
     </DoctorLayout>

@@ -62,9 +62,23 @@ const login = async ({ email, password }) => {
   return { user: sanitize(user), token: signToken(user) };
 };
 
+/** Update the logged-in user's own account fields (name/phone; email is the
+ *  unique login identifier and is intentionally not changeable here). */
+const updateProfile = async (userId, data) => {
+  const updated = await prisma.user.update({
+    where: { id: userId },
+    data: {
+      ...(data.name !== undefined ? { name: data.name } : {}),
+      ...(data.phone !== undefined ? { phone: data.phone || null } : {}),
+    },
+    include: { doctorProfile: true, patientProfile: true },
+  });
+  return sanitize(updated);
+};
+
 const sanitize = (user) => {
   const { passwordHash, ...rest } = user;
   return rest;
 };
 
-module.exports = { register, login, signToken, sanitize };
+module.exports = { register, login, updateProfile, signToken, sanitize };

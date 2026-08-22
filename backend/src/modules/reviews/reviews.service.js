@@ -2,8 +2,8 @@ const prisma = require('../../config/db');
 const { ApiError } = require('../../middleware/errorHandler');
 
 const reviewInclude = {
-  patient: { select: { id: true, name: true } },
-  doctor: { include: { user: { select: { id: true, name: true } } } },
+  patient: { select: { id: true, name: true, avatarUrl: true } },
+  doctor: { include: { user: { select: { id: true, name: true, avatarUrl: true } } } },
 };
 
 /**

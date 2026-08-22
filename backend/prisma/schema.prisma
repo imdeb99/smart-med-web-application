@@ -87,6 +87,7 @@ model User {
   email        String   @unique
   passwordHash String
   phone        String?
+  avatarUrl    String?
   role         Role     @default(PATIENT)
   createdAt    DateTime @default(now())
 
@@ -108,12 +109,16 @@ model DoctorProfile {
   specialty          String
   bio                String?
   consultationFee    Float
+  qualifications     String?
+  experienceYears    Int?
+  location           String?
   verificationStatus VerificationStatus @default(PENDING)
   createdAt          DateTime           @default(now())
 
-  appointments Appointment[]
-  healthRecords HealthRecord[]
-  reviews      Review[]
+  appointments   Appointment[]
+  healthRecords  HealthRecord[]
+  reviews        Review[]
+  dailyCapacities DailyCapacity[]
 }
 
 model PatientProfile {
@@ -136,7 +141,41 @@ model Appointment {
   status      AppointmentStatus @default(PENDING)
   createdAt   DateTime          @default(now())
 
+  // Daily Capacity Booking (optional — only set for capacity-based bookings).
+  // Nullable so legacy slot-based appointments remain untouched.
+  tokenNumber      Int?
+  estimatedTime    DateTime?
+  dailyCapacityId  String?
+  dailyCapacity    DailyCapacity? @relation(fields: [dailyCapacityId], references: [id], onDelete: SetNull)
+
   healthRecord HealthRecord?
+}
+
+model DailyCapacity {
+  id             String   @id @default(uuid())
+  doctorId       String
+  doctor         DoctorProfile @relation(fields: [doctorId], references: [id], onDelete: Cascade)
+  date           DateTime @db.Date
+  totalCapacity  Int
+  startTime      String
+  avgDurationMin Int      @default(10)
+  createdAt      DateTime @default(now())
+
+  appointments    Appointment[]
+  overrideLogs    CapacityOverrideLog[]
+
+  @@unique([doctorId, date])
+}
+
+model CapacityOverrideLog {
+  id                String        @id @default(uuid())
+  dailyCapacityId   String
+  dailyCapacity     DailyCapacity @relation(fields: [dailyCapacityId], references: [id], onDelete: Cascade)
+  adminId           String
+  previousCapacity  Int
+  newCapacity       Int
+  reason            String?
+  createdAt         DateTime      @default(now())
 }
 
 model HealthRecord {

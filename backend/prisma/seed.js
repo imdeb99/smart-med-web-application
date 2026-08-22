@@ -23,6 +23,9 @@ const doctors = [
     specialty: 'Cardiology',
     bio: 'Senior cardiologist with 15 years of experience in interventional cardiology.',
     consultationFee: 1200,
+    qualifications: 'MBBS, FCPS (Cardiology)',
+    experienceYears: 15,
+    location: 'Dhaka',
     verificationStatus: 'VERIFIED',
   },
   {
@@ -34,6 +37,9 @@ const doctors = [
     specialty: 'Dermatology',
     bio: 'Skin, hair and nail specialist. Treats chronic skin conditions.',
     consultationFee: 900,
+    qualifications: 'MBBS, DDV',
+    experienceYears: 10,
+    location: 'Chattogram',
     verificationStatus: 'VERIFIED',
   },
   {
@@ -45,6 +51,9 @@ const doctors = [
     specialty: 'Pediatrics',
     bio: 'Child health specialist focused on preventive care and vaccinations.',
     consultationFee: 800,
+    qualifications: 'MBBS, DCH',
+    experienceYears: 8,
+    location: 'Dhaka',
     verificationStatus: 'VERIFIED',
   },
   {
@@ -56,6 +65,9 @@ const doctors = [
     specialty: 'Gynecology',
     bio: 'Obstetrician and gynecologist, prenatal and postnatal care.',
     consultationFee: 1100,
+    qualifications: 'MBBS, FCPS (OBGYN)',
+    experienceYears: 12,
+    location: 'Sylhet',
     verificationStatus: 'PENDING',
   },
   {
@@ -67,6 +79,9 @@ const doctors = [
     specialty: 'Orthopedics',
     bio: 'Orthopedic surgeon specializing in sports injuries.',
     consultationFee: 1300,
+    qualifications: 'MBBS, MS (Ortho)',
+    experienceYears: 9,
+    location: 'Khulna',
     verificationStatus: 'VERIFIED',
   },
 ];
@@ -121,7 +136,20 @@ async function main() {
   for (const d of doctors) {
     const user = await prisma.user.upsert({
       where: { email: d.email },
-      update: {},
+      update: {
+        phone: d.phone,
+        doctorProfile: {
+          update: {
+            specialty: d.specialty,
+            bio: d.bio,
+            consultationFee: d.consultationFee,
+            qualifications: d.qualifications || null,
+            experienceYears: d.experienceYears ?? null,
+            location: d.location || null,
+            verificationStatus: d.verificationStatus,
+          },
+        },
+      },
       create: {
         name: d.name,
         email: d.email,
@@ -134,6 +162,9 @@ async function main() {
             specialty: d.specialty,
             bio: d.bio,
             consultationFee: d.consultationFee,
+            qualifications: d.qualifications || null,
+            experienceYears: d.experienceYears ?? null,
+            location: d.location || null,
             verificationStatus: d.verificationStatus,
           },
         },
@@ -168,6 +199,28 @@ async function main() {
     usersByEmail.set(p.email, user);
     console.log(`Patient: ${p.name}`);
   }
+
+  // Seed admin (matches frontend DEMO_CREDENTIALS.admin autofill on /login).
+  // Uses admin123 rather than the shared password123 so the frontend's admin
+  // demo login works out of the box. The update branch keeps re-runs
+  // idempotent even if an admin account already exists with other credentials.
+  const adminPasswordHash = await bcrypt.hash('admin123', 10);
+  await prisma.user.upsert({
+    where: { email: 'admin@smartmed.com' },
+    update: {
+      name: 'Admin User',
+      passwordHash: adminPasswordHash,
+      phone: '+8801711000000',
+    },
+    create: {
+      name: 'Admin User',
+      email: 'admin@smartmed.com',
+      passwordHash: adminPasswordHash,
+      phone: '+8801711000000',
+      role: 'ADMIN',
+    },
+  });
+  console.log('Admin: Admin User (admin@smartmed.com)');
 
   // Lab assistants (reference data — clear and re-insert for idempotency)
   await prisma.sampleCollection.updateMany({ data: { labAssistantId: null } });
@@ -242,9 +295,10 @@ async function main() {
   }
 
   console.log('\nSeeding complete.');
-  console.log('Test logins (password: password123):');
-  console.log('  Patient: rahim@mail.com');
-  console.log('  Doctor:  sarah@clinic.com');
+  console.log('Test logins:');
+  console.log('  Patient: rahim@mail.com (password: password123)');
+  console.log('  Doctor:  sarah@clinic.com (password: password123)');
+  console.log('  Admin:   admin@smartmed.com (password: admin123)');
 }
 
 main()

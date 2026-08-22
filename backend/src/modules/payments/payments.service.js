@@ -1,7 +1,7 @@
 const prisma = require('../../config/db');
 const { ApiError } = require('../../middleware/errorHandler');
 
-const paymentInclude = { user: { select: { id: true, name: true, email: true } } };
+const paymentInclude = { user: { select: { id: true, name: true, email: true, avatarUrl: true } } };
 
 /**
  * Creates a payment record and simulates the gateway flow: the mock gateway

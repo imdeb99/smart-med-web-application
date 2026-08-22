@@ -11,7 +11,6 @@ import {
   BadgeCheck,
 } from "lucide-react";
 import { useAppointments } from "../../context/AppointmentsContext";
-import { useDoctors } from "../../context/DoctorsContext";
 import { useAuth } from "../../context/AuthContext";
 
 function formatElapsed(seconds) {
@@ -24,11 +23,11 @@ export default function VideoConsultation() {
   const { appointmentId } = useParams();
   const navigate = useNavigate();
   const { appointments } = useAppointments();
-  const { getDoctorById } = useDoctors();
   const { user } = useAuth();
 
   const appointment = appointments.find((a) => a.id === appointmentId);
-  const doctor = appointment ? getDoctorById(appointment.doctorId) : null;
+  // Appointments from the API embed the doctor record.
+  const doctor = appointment?.doctor || null;
 
   const [elapsed, setElapsed] = useState(0);
   const [micOn, setMicOn] = useState(true);

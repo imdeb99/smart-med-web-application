@@ -1,11 +1,11 @@
 import { useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { Stethoscope, Mail, Lock, User, UserRound, ShieldCheck } from "lucide-react";
+import { Stethoscope, Mail, Lock, User, UserRound, ShieldCheck, Loader2 } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
 import { useToast } from "../../context/ToastContext";
 import useFormValidation, { validators } from "../../hooks/useFormValidation";
 import { Input } from "../../components/shared/Field";
-import mockUsers from "../../data/mockUsers";
+import { DEMO_CREDENTIALS } from "../../utils/constants";
 
 const roles = [
   { key: "patient", label: "Patient", icon: User },
@@ -30,10 +30,10 @@ export default function Login() {
       }
     );
 
-  const demoUser = mockUsers.find((u) => u.role === role);
-
   // Set when a guest tried to open a protected service and was sent here.
   const redirectTarget = location.state?.from;
+
+  const demoUser = DEMO_CREDENTIALS[role];
 
   const fillDemoCredentials = () => {
     setFormError("");
@@ -41,7 +41,8 @@ export default function Login() {
   };
 
   const onSubmit = async ({ email, password }) => {
-    const result = login({ email, password, role });
+    setFormError("");
+    const result = await login({ email, password });
     if (!result.success) {
       setFormError(result.error);
       addToast(result.error, "error");
@@ -54,7 +55,7 @@ export default function Login() {
     if (from && from !== "/login") {
       navigate(from, { replace: true });
     } else {
-      navigate(`/${role}/dashboard`, { replace: true });
+      navigate(`/${result.user.role.toLowerCase()}/dashboard`, { replace: true });
     }
   };
 
@@ -88,7 +89,7 @@ export default function Login() {
               role="status"
               className="bg-teal-50 border border-teal-200 text-teal-800 rounded-xl px-4 py-3 text-sm mb-6"
             >
-              Please log in or try our demo to access this feature.
+              Please log in to access this feature.
             </div>
           )}
 
@@ -123,6 +124,7 @@ export default function Login() {
               onChange={handleChange}
               onBlur={handleBlur}
               error={touched.email ? errors.email : ""}
+              disabled={submitting}
             />
 
             <Input
@@ -136,6 +138,7 @@ export default function Login() {
               onChange={handleChange}
               onBlur={handleBlur}
               error={touched.password ? errors.password : ""}
+              disabled={submitting}
             />
 
             <div className="flex justify-end">
@@ -147,9 +150,16 @@ export default function Login() {
             <button
               type="submit"
               disabled={submitting}
-              className="w-full bg-teal-600 hover:bg-teal-700 disabled:bg-gray-300 disabled:cursor-not-allowed text-white font-medium py-2.5 rounded-lg transition-colors"
+              className="w-full flex items-center justify-center gap-2 bg-teal-600 hover:bg-teal-700 disabled:bg-gray-300 disabled:cursor-not-allowed text-white font-medium py-2.5 rounded-lg transition-colors"
             >
-              {submitting ? "Signing in..." : `Sign in as ${role.charAt(0).toUpperCase() + role.slice(1)}`}
+              {submitting ? (
+                <>
+                  <Loader2 size={16} className="animate-spin" aria-hidden="true" />
+                  Signing in...
+                </>
+              ) : (
+                `Sign in as ${role.charAt(0).toUpperCase() + role.slice(1)}`
+              )}
             </button>
           </form>
 

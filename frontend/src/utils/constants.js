@@ -1,7 +1,10 @@
-// Demo mode: since there's no backend/auth linking, the app is always
-// demoed from the perspective of these fixed mock records.
-export const DEMO_PATIENT_ID = "pat-1";
-export const DEMO_DOCTOR_ID = "doc-1";
+// Real backend seed credentials (see backend/prisma/seed.js) used by the demo
+// autofill on the Login page.
+export const DEMO_CREDENTIALS = {
+  patient: { email: "rahim@mail.com", password: "password123" },
+  doctor: { email: "sarah@clinic.com", password: "password123" },
+  admin: { email: "admin@smartmed.com", password: "admin123" },
+};
 
 // Shared contact details, reused across the Footer and the Contact page.
 export const CONTACT_EMAIL = "support@smartmed.com";

@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import {
   BadgeCheck,
@@ -7,20 +8,88 @@ import {
   Languages,
   Calendar,
   ArrowLeft,
+  Loader2,
 } from "lucide-react";
-import mockReviews from "../../data/mockReviews";
 import { useDoctors } from "../../context/DoctorsContext";
+import reviewsApi from "../../api/reviews";
+import { mapReviewsListFromApi } from "../../api/adapters";
+import EmptyState from "../../components/shared/EmptyState";
+import Avatar from "../../components/shared/Avatar";
 
 export default function DoctorProfile() {
   const { id } = useParams();
   const { getDoctorById } = useDoctors();
-  const doctor = getDoctorById(id);
-  const reviews = mockReviews.filter((r) => r.doctorId === id);
+  const [doctor, setDoctor] = useState(null);
+  const [doctorLoading, setDoctorLoading] = useState(true);
+  const [doctorError, setDoctorError] = useState("");
+  const [reviews, setReviews] = useState([]);
+  const [reviewsLoading, setReviewsLoading] = useState(true);
+  // Backend doctor records have no rating fields; the reviews endpoint returns
+  // an aggregate summary we use for the rating display instead.
+  const [reviewSummary, setReviewSummary] = useState(null);
 
-  if (!doctor) {
+  useEffect(() => {
+    let cancelled = false;
+
+    const load = async () => {
+      setDoctorLoading(true);
+      setDoctorError("");
+      const result = await getDoctorById(id);
+      if (cancelled) return;
+      if (result) {
+        setDoctor(result);
+      } else {
+        setDoctorError("Doctor not found.");
+      }
+      setDoctorLoading(false);
+    };
+
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, [id, getDoctorById]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadReviews = async () => {
+      setReviewsLoading(true);
+      try {
+        const data = await reviewsApi.getReviewsByDoctor(id, { limit: 50 });
+        if (!cancelled) {
+          const mapped = mapReviewsListFromApi(data);
+          setReviews(mapped.reviews);
+          setReviewSummary(mapped.summary);
+        }
+      } catch {
+        if (!cancelled) {
+          setReviews([]);
+          setReviewSummary(null);
+        }
+      } finally {
+        if (!cancelled) setReviewsLoading(false);
+      }
+    };
+
+    loadReviews();
+    return () => {
+      cancelled = true;
+    };
+  }, [id]);
+
+  if (doctorLoading) {
+    return (
+      <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-24 flex items-center justify-center">
+        <Loader2 size={28} className="animate-spin text-teal-600" aria-hidden="true" />
+      </div>
+    );
+  }
+
+  if (doctorError || !doctor) {
     return (
       <div className="text-center py-24 px-4">
-        <p className="text-gray-600">Doctor not found.</p>
+        <p className="text-gray-600">{doctorError || "Doctor not found."}</p>
         <Link to="/patient/doctors" className="text-teal-600 hover:underline mt-3 inline-block">
           Back to doctor listing
         </Link>
@@ -40,12 +109,7 @@ export default function DoctorProfile() {
 
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 sm:p-8">
         <div className="flex flex-col sm:flex-row gap-6">
-          <img
-            src={doctor.avatar}
-            alt={doctor.name}
-            loading="lazy"
-            className="w-28 h-28 rounded-2xl object-cover bg-teal-50 shrink-0"
-          />
+          <Avatar name={doctor.name} src={doctor.avatar} className="w-28 h-28 text-3xl" />
 
           <div className="flex-1">
             <div className="flex flex-wrap items-center gap-2">
@@ -67,7 +131,8 @@ export default function DoctorProfile() {
             <div className="flex flex-wrap items-center gap-4 mt-4 text-sm text-gray-500">
               <span className="flex items-center gap-1.5">
                 <Star size={15} className="text-amber-400 fill-amber-400" aria-hidden="true" />
-                {doctor.rating} ({doctor.reviewsCount} reviews)
+                {reviewSummary?.averageRating ?? doctor.rating} (
+                {reviewSummary?.totalReviews ?? doctor.reviewsCount} reviews)
               </span>
               <span className="flex items-center gap-1.5">
                 <Briefcase size={15} aria-hidden="true" />
@@ -79,7 +144,7 @@ export default function DoctorProfile() {
               </span>
               <span className="flex items-center gap-1.5">
                 <Languages size={15} aria-hidden="true" />
-                {doctor.languages.join(", ")}
+                {doctor.languages.join(", ") || "—"}
               </span>
             </div>
 
@@ -105,13 +170,15 @@ export default function DoctorProfile() {
       <div className="grid md:grid-cols-3 gap-6 mt-6">
         <div className="md:col-span-2 bg-white rounded-2xl border border-gray-100 shadow-sm p-6 sm:p-8">
           <h2 className="text-lg font-semibold text-gray-800 mb-3">About</h2>
-          <p className="text-sm text-gray-600 leading-relaxed">{doctor.bio}</p>
+          <p className="text-sm text-gray-600 leading-relaxed">{doctor.bio || "No bio available yet."}</p>
         </div>
 
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 sm:p-8">
           <h2 className="text-lg font-semibold text-gray-800 mb-3">Available Slots Today</h2>
           {doctor.availableSlots.length === 0 ? (
-            <p className="text-sm text-gray-400">No slots available today.</p>
+            <p className="text-sm text-gray-400">
+              Availability is not configured yet — booking falls back to standard time slots.
+            </p>
           ) : (
             <div className="flex flex-wrap gap-2">
               {doctor.availableSlots.map((slot) => (
@@ -129,11 +196,17 @@ export default function DoctorProfile() {
 
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-6 sm:p-8 mt-6">
         <h2 className="text-lg font-semibold text-gray-800 mb-5">
-          Patient Reviews ({reviews.length})
+          Patient Reviews ({reviewsLoading ? "…" : reviews.length})
         </h2>
 
-        {reviews.length === 0 ? (
-          <p className="text-sm text-gray-400">No reviews yet for this doctor.</p>
+        {reviewsLoading ? (
+          <p className="text-sm text-gray-400">Loading reviews...</p>
+        ) : reviews.length === 0 ? (
+          <EmptyState
+            icon={Star}
+            title="No reviews yet"
+            message="Reviews from patients will appear here after completed consultations."
+          />
         ) : (
           <div className="space-y-5">
             {reviews.map((review) => (

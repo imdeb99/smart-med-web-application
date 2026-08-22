@@ -8,6 +8,14 @@ const FOCUSABLE =
 export default function Modal({ isOpen, onClose, title, children, footer, size = "md" }) {
   const panelRef = useRef(null);
   const previouslyFocused = useRef(null);
+  // Keep the latest onClose in a ref so the focus/keydown effect below only
+  // depends on isOpen. Otherwise an inline onClose arrow (a new reference on
+  // every parent render) makes the effect re-run on each keystroke, re-focusing
+  // the first focusable element (the close button) and stealing the cursor.
+  const onCloseRef = useRef(onClose);
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
 
   useEffect(() => {
     if (!isOpen) return undefined;
@@ -18,7 +26,7 @@ export default function Modal({ isOpen, onClose, title, children, footer, size =
     const onKeyDown = (e) => {
       if (e.key === "Escape") {
         e.stopPropagation();
-        onClose();
+        onCloseRef.current();
         return;
       }
       if (e.key !== "Tab" || !panelRef.current) return;
@@ -44,7 +52,7 @@ export default function Modal({ isOpen, onClose, title, children, footer, size =
       document.body.style.overflow = "";
       previouslyFocused.current?.focus?.();
     };
-  }, [isOpen, onClose]);
+  }, [isOpen]);
 
   if (!isOpen) return null;
 

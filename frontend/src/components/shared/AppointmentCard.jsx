@@ -1,7 +1,6 @@
 import { memo } from "react";
-import { Calendar, Clock, Video, MapPin, BadgeCheck } from "lucide-react";
+import { Calendar, Clock, Video, MapPin, BadgeCheck, FileDown } from "lucide-react";
 import { formatDate } from "../../utils/helpers";
-import { useDoctors } from "../../context/DoctorsContext";
 
 const statusStyles = {
   upcoming: "bg-teal-50 text-teal-700",
@@ -9,12 +8,20 @@ const statusStyles = {
   cancelled: "bg-red-50 text-red-700",
 };
 
-function AppointmentCard({ appointment, onCancel, onReschedule, onJoin }) {
-  const { getDoctorById } = useDoctors();
-  const doctor = getDoctorById(appointment.doctorId);
+function AppointmentCard({ appointment, onCancel, onReschedule, onJoin, onDownload }) {
+  // Appointments from the API embed the doctor; fall back to the appointment's
+  // own fields so the card never renders empty.
+  const doctor = appointment.doctor || {
+    name: "Unknown Doctor",
+    specialty: "",
+    avatar: "",
+    verified: false,
+  };
   if (!doctor) return null;
 
-  const hasActions = appointment.status === "upcoming" && (onCancel || onReschedule || onJoin);
+  // Capacity bookings have a ticket; legacy slot bookings don't (no token).
+  const hasTicket = Boolean(appointment.dailyCapacityId);
+  const hasActions = appointment.status === "upcoming" && (onCancel || onReschedule || onJoin || (hasTicket && onDownload));
 
   return (
     <article className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 flex flex-col sm:flex-row sm:items-center gap-4">
@@ -60,6 +67,12 @@ function AppointmentCard({ appointment, onCancel, onReschedule, onJoin }) {
           {appointment.status}
         </span>
 
+        {appointment.tokenNumber != null && (
+          <span className="text-xs font-bold text-teal-700 bg-teal-50 px-2.5 py-1 rounded-full">
+            Token #{appointment.tokenNumber}
+          </span>
+        )}
+
         {hasActions && (
           <div className="flex gap-2 flex-wrap justify-end">
             {appointment.type === "video" && onJoin && (
@@ -76,6 +89,15 @@ function AppointmentCard({ appointment, onCancel, onReschedule, onJoin }) {
                 className="text-xs font-medium border border-gray-200 text-gray-600 px-3 py-1.5 rounded-lg hover:border-teal-300 transition-colors"
               >
                 Reschedule
+              </button>
+            )}
+            {hasTicket && onDownload && (
+              <button
+                onClick={() => onDownload(appointment)}
+                className="text-xs font-medium border border-teal-200 text-teal-700 px-3 py-1.5 rounded-lg hover:bg-teal-50 transition-colors"
+              >
+                <FileDown size={12} className="inline mr-1" aria-hidden="true" />
+                Download PDF
               </button>
             )}
             {onCancel && (

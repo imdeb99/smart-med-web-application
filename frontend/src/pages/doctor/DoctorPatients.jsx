@@ -1,41 +1,44 @@
 import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Search, FileText, History, Users } from "lucide-react";
+import { Search, FileText, History, Users, Loader2 } from "lucide-react";
 import DoctorLayout from "../../components/doctor/DoctorLayout";
 import Modal from "../../components/shared/Modal";
 import EmptyState from "../../components/shared/EmptyState";
 import { useAppointments } from "../../context/AppointmentsContext";
-import { usePatients } from "../../context/PatientsContext";
-import { DEMO_DOCTOR_ID } from "../../utils/constants";
+import { useDoctors } from "../../context/DoctorsContext";
 import { formatDate } from "../../utils/helpers";
 
 export default function DoctorPatients() {
-  const { appointments } = useAppointments();
-  const { patients: allPatients } = usePatients();
+  const { appointments, isLoading, error, refresh } = useAppointments();
+  const { currentDoctor } = useDoctors();
   const [search, setSearch] = useState("");
   const [selectedPatient, setSelectedPatient] = useState(null);
   const navigate = useNavigate();
 
-  const myAppointments = appointments.filter((a) => a.doctorId === DEMO_DOCTOR_ID);
+  // Real appointments are role-scoped by the backend and include the patient
+  // record, so no separate patients lookup is needed.
+  const myAppointments = useMemo(
+    () => appointments.filter((a) => a.doctorId === currentDoctor?.id),
+    [appointments, currentDoctor?.id],
+  );
 
   const patients = useMemo(() => {
     const byPatient = {};
     myAppointments.forEach((a) => {
-      if (!byPatient[a.patientId]) byPatient[a.patientId] = [];
-      byPatient[a.patientId].push(a);
+      if (!a.patient) return;
+      if (!byPatient[a.patient.id]) byPatient[a.patient.id] = [];
+      byPatient[a.patient.id].push(a);
     });
 
     return Object.entries(byPatient)
       .map(([patientId, visits]) => {
-        const patient = allPatients.find((p) => p.id === patientId);
-        if (!patient) return null;
+        const patient = visits[0].patient;
         const sorted = [...visits].sort((a, b) => new Date(b.date) - new Date(a.date));
         return { patient, visits: sorted, lastVisit: sorted[0] };
       })
-      .filter(Boolean)
       .filter((p) => p.patient.name.toLowerCase().includes(search.toLowerCase()))
       .sort((a, b) => new Date(b.lastVisit.date) - new Date(a.lastVisit.date));
-  }, [myAppointments, allPatients, search]);
+  }, [myAppointments, search]);
 
   return (
     <DoctorLayout>
@@ -57,7 +60,28 @@ export default function DoctorPatients() {
         />
       </div>
 
-      {patients.length === 0 ? (
+      {isLoading ? (
+        <div className="flex items-center justify-center gap-2 py-16 text-gray-400">
+          <Loader2 size={20} className="animate-spin text-teal-600" aria-hidden="true" />
+          <span className="text-sm">Loading patients...</span>
+        </div>
+      ) : error ? (
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm">
+          <EmptyState
+            icon={Users}
+            title="Could not load patients"
+            message={error}
+            action={
+              <button
+                onClick={refresh}
+                className="inline-flex items-center gap-2 bg-teal-600 hover:bg-teal-700 text-white font-medium px-5 py-2.5 rounded-xl transition-colors"
+              >
+                Try Again
+              </button>
+            }
+          />
+        </div>
+      ) : patients.length === 0 ? (
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm">
           <EmptyState
             icon={Users}
@@ -98,9 +122,9 @@ export default function DoctorPatients() {
                     </div>
                   </td>
                   <td className="px-5 py-3 text-gray-600">
-                    {patient.age} / {patient.gender}
+                    {patient.age ? `${patient.age} / ${patient.gender || "—"}` : "—"}
                   </td>
-                  <td className="px-5 py-3 text-gray-600">{patient.bloodGroup}</td>
+                  <td className="px-5 py-3 text-gray-600">{patient.bloodGroup || "—"}</td>
                   <td className="px-5 py-3 text-gray-600">{formatDate(lastVisit.date)}</td>
                   <td className="px-5 py-3 text-gray-600">{visits.length}</td>
                   <td className="px-5 py-3">

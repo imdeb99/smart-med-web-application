@@ -1,6 +1,5 @@
 import { memo } from "react";
 import { Calendar, Clock, Video, MapPin } from "lucide-react";
-import { usePatients } from "../../context/PatientsContext";
 import { formatDate } from "../../utils/helpers";
 
 const statusStyles = {
@@ -10,8 +9,13 @@ const statusStyles = {
 };
 
 function AppointmentRow({ appointment, actions }) {
-  const { getPatientById } = usePatients();
-  const patient = getPatientById(appointment.patientId);
+  // Appointments from the API embed the patient record.
+  const patient = appointment.patient || {
+    name: "Unknown Patient",
+    avatar: "",
+    age: "",
+    gender: "",
+  };
   if (!patient) return null;
 
   return (

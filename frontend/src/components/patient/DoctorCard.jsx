@@ -1,17 +1,13 @@
 import { memo } from "react";
 import { Link } from "react-router-dom";
 import { Star, BadgeCheck, MapPin } from "lucide-react";
+import Avatar from "../shared/Avatar";
 
 function DoctorCard({ doctor }) {
   return (
     <article className="bg-white rounded-2xl border border-gray-100 shadow-sm hover:shadow-md transition-shadow p-5 flex flex-col">
       <div className="flex items-center gap-4">
-        <img
-          src={doctor.avatar}
-          alt={doctor.name}
-          loading="lazy"
-          className="w-16 h-16 rounded-full object-cover bg-teal-50"
-        />
+        <Avatar name={doctor.name} src={doctor.avatar} className="w-16 h-16 text-lg" />
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-1.5">
             <h3 className="font-semibold text-gray-800 truncate">{doctor.name}</h3>
